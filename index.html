@@ -473,13 +473,22 @@ const DERIVE_PRESETS = {
 async function openDerive(variantId, mode) {
   // fetch parent to know its aspect/quality
   const { data: parent, error } = await sb.from('variants').select('*').eq('id', variantId).single();
-  if (error || !parent) { alert('couldn\'t load variant'); return; }
+  if (error || !parent) { alert('couldn\'t load variant: ' + (error?.message || 'not found')); return; }
   deriveState = { variantId, parent, mode };
 
   const cfg = DERIVE_PRESETS[mode];
   $('derive-title').textContent = cfg.title;
   $('derive-hint').textContent = cfg.hint;
-  $('derive-prompt').value = '';
+
+  // For 'reformat' the prompt rarely needs custom wording — pre-fill so the user
+  // can just hit Submit. For 'edit' and 'reuse', leave empty + show placeholder
+  // because the user MUST describe their intended change.
+  if (mode === 'reformat') {
+    const otherAspect = parent.aspect === '9:16' ? '1:1' : '9:16';
+    $('derive-prompt').value = `Recreate this ad adapted to a ${otherAspect} aspect ratio. Keep the same composition, colors, headline, layout, and overall brand feel — just reflow for the new shape.`;
+  } else {
+    $('derive-prompt').value = '';
+  }
   $('derive-prompt').placeholder = cfg.placeholder;
   $('derive-err').textContent = '';
 
@@ -498,29 +507,46 @@ async function openDerive(variantId, mode) {
 
 $('derive-cancel').onclick = () => $('derive-modal').classList.remove('open');
 
+// Aspect → size map (must match server-side ASPECT_TO_SIZE in submit-job).
+const UI_ASPECT_TO_SIZE = {
+  '9:16': '1152x2048',
+  '1:1':  '1024x1024',
+};
+
 $('derive-submit').onclick = async () => {
   const p = $('derive-prompt').value.trim();
   if (!p) { $('derive-err').textContent = 'prompt required'; return; }
 
   const btn = $('derive-submit'); btn.disabled = true; btn.textContent = 'Submitting…';
   try {
-    const res = await fetch(`${$('sb-url').value}/functions/v1/submit-job/derive`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${$('sb-key').value}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        variant_id: deriveState.variantId,
-        edit_prompt: p,
-        aspect: $('derive-aspect').value,
-        quality: $('derive-quality').value,
-      }),
+    // Insert directly into the variants table — no Edge Function call needed.
+    // The pg_cron heartbeat will pick it up within ~60s.
+    const aspect = $('derive-aspect').value;
+    const size = UI_ASPECT_TO_SIZE[aspect];
+    const quality = $('derive-quality').value;
+
+    const { error } = await sb.from('variants').insert({
+      job_id: deriveState.parent.job_id,
+      parent_variant_id: deriveState.variantId,
+      aspect,
+      size,
+      quality,
+      edit_prompt: p,
     });
-    const txt = await res.text();
-    if (!res.ok) { $('derive-err').textContent = txt; return; }
+    if (error) { $('derive-err').textContent = error.message; return; }
+
+    // Best-effort kick to the worker so the new variant starts immediately
+    // instead of waiting for the next cron tick. Failure is fine (CORS, etc.) —
+    // the cron heartbeat will pick it up within ~60s either way.
+    fetch(`${$('sb-url').value}/functions/v1/process-job`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${$('sb-key').value}` },
+    }).catch(() => {});
+
     $('derive-modal').classList.remove('open');
     refresh();
+  } catch (e) {
+    $('derive-err').textContent = e.message || String(e);
   } finally {
     btn.disabled = false; btn.textContent = 'Submit';
   }
