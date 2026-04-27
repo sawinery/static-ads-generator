@@ -316,6 +316,42 @@ $('save-conn').onclick = () => {
 };
 loadConn();
 
+// ---- transcode any user image into a clean RGB PNG ≤2048px on the long edge.
+// Uses the browser's Canvas API which handles every format the browser handles
+// (JPG, PNG, WebP, HEIC on Safari, AVIF, GIF, BMP) and outputs sane PNG that
+// gpt-image-2 will always accept. Strips EXIF, color profiles, and CMYK.
+async function transcodeForUpload(file) {
+  const MAX_EDGE = 2048;
+
+  // Decode the file into an ImageBitmap (handles any format the browser supports).
+  let bmp;
+  try {
+    bmp = await createImageBitmap(file);
+  } catch (e) {
+    throw new Error(`Could not decode image (${file.type || 'unknown type'}): ${e.message || e}. Try saving as PNG/JPG first.`);
+  }
+
+  // Compute target dimensions (preserve aspect, cap long edge).
+  let w = bmp.width, h = bmp.height;
+  if (w > MAX_EDGE || h > MAX_EDGE) {
+    if (w >= h) { h = Math.round(h * MAX_EDGE / w); w = MAX_EDGE; }
+    else        { w = Math.round(w * MAX_EDGE / h); h = MAX_EDGE; }
+  }
+
+  // Draw to canvas → export as PNG.
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bmp, 0, 0, w, h);
+  bmp.close?.();
+
+  const blob = await new Promise((resolve, reject) =>
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('canvas.toBlob returned null')), 'image/png'));
+
+  // Wrap as a File so Supabase storage gets a proper name + type
+  return new File([blob], `transcoded-${Date.now()}.png`, { type: 'image/png' });
+}
+
 // ---- submit single ----
 $('submit-one').onclick = async () => {
   $('submit-err').textContent = '';
@@ -328,8 +364,11 @@ $('submit-one').onclick = async () => {
     let refPath = null;
     const refFile = $('ref-file').files[0];
     if (refFile) {
-      const path = `${crypto.randomUUID()}-${refFile.name}`;
-      const up = await sb.storage.from('ad-inputs').upload(path, refFile);
+      btn.textContent = 'Transcoding…';
+      const transcoded = await transcodeForUpload(refFile);
+      btn.textContent = 'Uploading…';
+      const path = `${crypto.randomUUID()}-${transcoded.name}`;
+      const up = await sb.storage.from('ad-inputs').upload(path, transcoded, { contentType: 'image/png' });
       if (up.error) throw new Error(up.error.message);
       refPath = path;
     }
