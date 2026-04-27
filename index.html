@@ -188,6 +188,11 @@
         </div>
       </div>
 
+      <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink); margin-top:10px;">
+        <input type="checkbox" id="safe-zones"> Apply Meta safe zones
+        <span class="hint" style="margin-left:6px; display:inline">(keep text away from FB/IG UI)</span>
+      </label>
+
       <button class="btn" id="submit-one" style="width:100%; margin-top:10px">Submit job</button>
       <div class="err" id="submit-err"></div>
     </div>
@@ -225,6 +230,11 @@
           </select>
         </div>
       </div>
+
+      <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink); margin-top:10px;">
+        <input type="checkbox" id="batch-safe-zones"> Apply Meta safe zones
+      </label>
+
       <button class="btn ghost" id="submit-batch" style="width:100%; margin-top:10px">Queue batch</button>
     </div>
   </section>
@@ -336,6 +346,7 @@ $('submit-one').onclick = async () => {
       quality: $('quality').value,
       aspects,
       variations: parseInt($('variations').value, 10),
+      safe_zones: $('safe-zones').checked,
     }).select('id');
     if (error) throw new Error(error.message);
 
@@ -370,6 +381,7 @@ $('submit-batch').onclick = async () => {
     quality: $('batch-quality').value,
     aspects,
     variations: parseInt($('batch-variations').value, 10),
+    safe_zones: $('batch-safe-zones').checked,
   }));
   const { error } = await sb.from('jobs').insert(rows);
   if (error) { alert(error.message); return; }
