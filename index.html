@@ -158,6 +158,16 @@
       <label style="margin-top:10px">Reference image (optional)</label>
       <input type="file" id="ref-file" accept="image/*">
 
+      <label style="margin-top:10px">Aspect ratios</label>
+      <div style="display:flex; gap:14px; padding:6px 0;">
+        <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
+          <input type="checkbox" id="asp-9-16" checked> 9:16
+        </label>
+        <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
+          <input type="checkbox" id="asp-1-1"> 1:1
+        </label>
+      </div>
+
       <div class="row" style="margin-top:10px">
         <div>
           <label>Quality</label>
@@ -168,10 +178,13 @@
           </select>
         </div>
         <div>
-          <label>&nbsp;</label>
-          <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink); padding-top:8px">
-            <input type="checkbox" id="square"> Also generate 1:1
-          </label>
+          <label>Variations per aspect</label>
+          <select id="variations">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
         </div>
       </div>
 
@@ -182,6 +195,17 @@
     <div class="card">
       <h2>Batch (paste lines, one prompt per line)</h2>
       <textarea id="batch" placeholder="Coffee subscription ad...&#10;Sneaker drop ad, neon palette...&#10;SaaS productivity ad, minimal..."></textarea>
+
+      <label style="margin-top:10px">Aspect ratios</label>
+      <div style="display:flex; gap:14px; padding:6px 0;">
+        <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
+          <input type="checkbox" id="batch-asp-9-16" checked> 9:16
+        </label>
+        <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
+          <input type="checkbox" id="batch-asp-1-1"> 1:1
+        </label>
+      </div>
+
       <div class="row" style="margin-top:10px">
         <div>
           <label>Quality</label>
@@ -192,10 +216,13 @@
           </select>
         </div>
         <div>
-          <label>&nbsp;</label>
-          <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink); padding-top:8px">
-            <input type="checkbox" id="batch-square"> Also 1:1
-          </label>
+          <label>Variations per aspect</label>
+          <select id="batch-variations">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
         </div>
       </div>
       <button class="btn ghost" id="submit-batch" style="width:100%; margin-top:10px">Queue batch</button>
@@ -296,12 +323,19 @@ $('submit-one').onclick = async () => {
       if (up.error) throw new Error(up.error.message);
       refPath = path;
     }
+
+    const aspects = [];
+    if ($('asp-9-16').checked) aspects.push('9:16');
+    if ($('asp-1-1').checked)  aspects.push('1:1');
+    if (!aspects.length) throw new Error('pick at least one aspect ratio');
+
     btn.textContent = 'Submitting…';
     const { data, error } = await sb.from('jobs').insert({
       prompt,
       reference_image_path: refPath,
       quality: $('quality').value,
-      generate_square: $('square').checked,
+      aspects,
+      variations: parseInt($('variations').value, 10),
     }).select('id');
     if (error) throw new Error(error.message);
 
@@ -325,10 +359,17 @@ $('submit-batch').onclick = async () => {
   if (!sb) return;
   const lines = $('batch').value.split('\n').map(s=>s.trim()).filter(Boolean);
   if (!lines.length) return;
+
+  const aspects = [];
+  if ($('batch-asp-9-16').checked) aspects.push('9:16');
+  if ($('batch-asp-1-1').checked)  aspects.push('1:1');
+  if (!aspects.length) { alert('pick at least one aspect ratio'); return; }
+
   const rows = lines.map(p => ({
     prompt: p,
     quality: $('batch-quality').value,
-    generate_square: $('batch-square').checked,
+    aspects,
+    variations: parseInt($('batch-variations').value, 10),
   }));
   const { error } = await sb.from('jobs').insert(rows);
   if (error) { alert(error.message); return; }
