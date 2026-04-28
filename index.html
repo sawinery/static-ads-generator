@@ -32,7 +32,8 @@
     border-radius:var(--radius); padding:8px 10px; outline:none;
   }
   input:focus, textarea:focus, select:focus { border-color:var(--accent); }
-  textarea { resize:vertical; min-height:84px; font-family:var(--mono); font-size:12.5px; }
+  textarea { resize:vertical; min-height:160px; font-family:var(--mono); font-size:12.5px; line-height:1.5; }
+  textarea#derive-prompt { min-height:120px; }
   label { display:block; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-dim); margin-bottom:6px; }
 
   /* ---- layout ---- */
@@ -90,15 +91,53 @@
     position:relative;
   }
   .ad.square .thumb { aspect-ratio: 1/1; }
-  .ad .thumb img { width:100%; height:100%; object-fit:cover; }
+  .ad.wide .thumb   { aspect-ratio: 16/9; }
+  .ad .thumb img { width:100%; height:100%; object-fit:cover; cursor:zoom-in; }
   .ad .thumb .badge {
     position:absolute; top:6px; left:6px;
     background:rgba(0,0,0,.6); color:var(--ink); font-family:var(--mono); font-size:10px;
     padding:2px 6px; border-radius:3px; letter-spacing:.05em;
   }
   .ad .thumb .badge.aspect { right:6px; left:auto; background:var(--accent); color:#0e0f12; font-weight:700; }
+  .ad .thumb .star {
+    position:absolute; top:6px; right:6px; z-index:2;
+    width:28px; height:28px; border-radius:50%;
+    background:rgba(0,0,0,.65); border:0; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    font-size:14px; line-height:1;
+    transition:transform 0.15s, background 0.15s;
+  }
+  .ad .thumb .star:hover { transform:scale(1.15); background:rgba(0,0,0,.85); }
+  .ad .thumb .star.on { color:var(--accent-2); }
+  .ad .thumb .star.off { color:rgba(255,255,255,.4); }
+  .ad.square .thumb .badge.aspect { right:42px; }       /* leave room for star */
+  .ad .thumb .badge.aspect { right:42px; }              /* leave room for star */
+
+  /* tabs */
+  .tabs { display:flex; gap:4px; margin-right:10px; padding:3px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); }
+  .tab { background:transparent; color:var(--ink-dim); border:0; padding:5px 12px; border-radius:4px; font-size:12px; font-weight:500; cursor:pointer; }
+  .tab.active { background:var(--accent); color:#0e0f12; }
+  .tab:hover:not(.active) { color:var(--ink); }
+  .tab .count { font-family:var(--mono); font-size:10px; opacity:0.7; margin-left:4px; }
+
+  /* pagination */
+  .pager { display:flex; gap:4px; align-items:center; justify-content:center; margin-top:18px; padding:12px 0; }
+  .pager .btn { padding:5px 10px; font-size:12px; }
+  .pager .info { font-family:var(--mono); font-size:11px; color:var(--ink-dim); margin:0 10px; }
+
+  /* lightbox */
+  .lightbox {
+    position:fixed; inset:0; background:rgba(0,0,0,.92); display:none;
+    align-items:center; justify-content:center; z-index:60; padding:40px;
+    cursor:zoom-out;
+  }
+  .lightbox.open { display:flex; }
+  .lightbox img { max-width:100%; max-height:100%; object-fit:contain; box-shadow:0 0 80px rgba(0,0,0,.8); }
+  .lightbox .close { position:absolute; top:16px; right:20px; color:var(--ink); background:transparent; border:0; font-size:28px; cursor:pointer; line-height:1; }
   .ad .body { padding:10px 12px; border-top:1px solid var(--line); }
-  .ad .body .prompt { font-size:12px; color:var(--ink-dim); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height:34px; }
+  .ad .body .prompt { font-size:12px; color:var(--ink-dim); display:-webkit-box; -webkit-line-clamp:6; -webkit-box-orient:vertical; overflow:hidden; min-height:34px; cursor:pointer; transition:all 0.2s; }
+  .ad .body .prompt.expanded { -webkit-line-clamp:unset; max-height:none; }
+  .ad .body .prompt:hover { color:var(--ink); }
   .ad .meta-row { display:flex; justify-content:space-between; font-family:var(--mono); font-size:10.5px; color:var(--ink-low); margin-top:8px; }
   .ad .meta-row .cost { color:var(--accent-2); }
   .ad .actions { display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px; border-top:1px solid var(--line); background:var(--bg); }
@@ -138,14 +177,14 @@
   <!-- LEFT: submit form -->
   <section class="pane-left">
 
-    <div class="card">
+    <div class="card" id="conn-card">
       <h2>Connection</h2>
       <label>Supabase URL</label>
       <input id="sb-url" placeholder="https://xxxxx.supabase.co">
       <div style="height:8px"></div>
       <label>Service Role Key (or anon if RLS disabled)</label>
       <input id="sb-key" type="password" placeholder="eyJhb...">
-      <div class="hint">Stored in localStorage on this device only.</div>
+      <div class="hint">Stored in localStorage on this device only. To skip this panel, set <code style="font-size:11px">SUPABASE_URL</code> and <code style="font-size:11px">SUPABASE_KEY</code> as Vercel env vars (see README).</div>
       <div style="height:10px"></div>
       <button class="btn ghost small" id="save-conn">Save & test</button>
     </div>
@@ -159,12 +198,15 @@
       <input type="file" id="ref-file" accept="image/*">
 
       <label style="margin-top:10px">Aspect ratios</label>
-      <div style="display:flex; gap:14px; padding:6px 0;">
+      <div style="display:flex; gap:14px; padding:6px 0; flex-wrap:wrap;">
         <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
           <input type="checkbox" id="asp-9-16" checked> 9:16
         </label>
         <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
           <input type="checkbox" id="asp-1-1"> 1:1
+        </label>
+        <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
+          <input type="checkbox" id="asp-16-9"> 16:9 <span class="hint" style="display:inline">(YouTube)</span>
         </label>
       </div>
 
@@ -202,12 +244,15 @@
       <textarea id="batch" placeholder="Coffee subscription ad...&#10;Sneaker drop ad, neon palette...&#10;SaaS productivity ad, minimal..."></textarea>
 
       <label style="margin-top:10px">Aspect ratios</label>
-      <div style="display:flex; gap:14px; padding:6px 0;">
+      <div style="display:flex; gap:14px; padding:6px 0; flex-wrap:wrap;">
         <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
           <input type="checkbox" id="batch-asp-9-16" checked> 9:16
         </label>
         <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
           <input type="checkbox" id="batch-asp-1-1"> 1:1
+        </label>
+        <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
+          <input type="checkbox" id="batch-asp-16-9"> 16:9
         </label>
       </div>
 
@@ -242,14 +287,24 @@
   <!-- RIGHT: jobs list -->
   <section class="pane-right">
     <div class="toolbar">
-      <h2>Generated ads</h2>
+      <div class="tabs">
+        <button class="tab active" data-tab="all">All <span class="count" id="count-all"></span></button>
+        <button class="tab" data-tab="favorites">★ Favorites <span class="count" id="count-fav"></span></button>
+      </div>
       <button class="btn ghost small" id="refresh">Refresh</button>
       <div class="stats" id="stats">—</div>
     </div>
     <div id="ads" class="grid"></div>
     <div id="empty" class="empty" style="display:none">No ads yet. Submit a job on the left.</div>
+    <div id="pager" class="pager" style="display:none"></div>
   </section>
 </main>
+
+<!-- lightbox -->
+<div class="lightbox" id="lightbox">
+  <button class="close" id="lightbox-close">×</button>
+  <img id="lightbox-img" alt="">
+</div>
 
 <!-- derive modal: handles edit / reformat / use-as-reference -->
 <div class="modal-bg" id="derive-modal">
@@ -264,8 +319,9 @@
       <div>
         <label>Aspect</label>
         <select id="derive-aspect">
-          <option value="9:16">9:16 (1024×1792)</option>
-          <option value="1:1">1:1 (1024×1024)</option>
+          <option value="9:16">9:16 (Stories/Reels)</option>
+          <option value="1:1">1:1 (Feed)</option>
+          <option value="16:9">16:9 (YouTube)</option>
         </select>
       </div>
       <div>
@@ -286,6 +342,10 @@
   </div>
 </div>
 
+<!-- Optional build-time config (populated by build.sh from Vercel env vars).
+     If env.js doesn't exist, the UI falls back to manual entry / localStorage. -->
+<script src="env.js" onerror="void 0;"></script>
+
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
@@ -294,6 +354,20 @@ const $ = (id) => document.getElementById(id);
 
 // ---- connection ----
 function loadConn() {
+  // First: try Vercel build-time env vars (set via vercel.json substitution)
+  // OR a window.SUPABASE_CONFIG global (set via a separate config.js).
+  const envUrl = (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.url) || '';
+  const envKey = (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.key) || '';
+
+  if (envUrl && envKey) {
+    $('sb-url').value = envUrl;
+    $('sb-key').value = envKey;
+    $('conn-card').style.display = 'none';   // hide the form entirely
+    initClient();
+    return;
+  }
+
+  // Fallback: localStorage from previous manual entry
   $('sb-url').value = localStorage.getItem('sb-url') || '';
   $('sb-key').value = localStorage.getItem('sb-key') || '';
   if ($('sb-url').value && $('sb-key').value) initClient();
@@ -376,6 +450,7 @@ $('submit-one').onclick = async () => {
     const aspects = [];
     if ($('asp-9-16').checked) aspects.push('9:16');
     if ($('asp-1-1').checked)  aspects.push('1:1');
+    if ($('asp-16-9').checked) aspects.push('16:9');
     if (!aspects.length) throw new Error('pick at least one aspect ratio');
 
     btn.textContent = 'Submitting…';
@@ -413,6 +488,7 @@ $('submit-batch').onclick = async () => {
   const aspects = [];
   if ($('batch-asp-9-16').checked) aspects.push('9:16');
   if ($('batch-asp-1-1').checked)  aspects.push('1:1');
+  if ($('batch-asp-16-9').checked) aspects.push('16:9');
   if (!aspects.length) { alert('pick at least one aspect ratio'); return; }
 
   const rows = lines.map(p => ({
@@ -432,68 +508,142 @@ $('submit-batch').onclick = async () => {
   refresh();
 };
 
-// ---- refresh ----
-$('refresh').onclick = refresh;
+// ---- state ----
+const PAGE_SIZE = 50;
+let currentTab = 'all';        // 'all' | 'favorites'
+let currentPage = 0;           // 0-indexed
+let allVariants = [];          // cached from last fetch
+let totalCounts = { all: 0, fav: 0 };
 
-async function refresh() {
+// ---- refresh ----
+$('refresh').onclick = () => refresh(true);
+
+async function refresh(userInitiated = false) {
   if (!sb) return;
-  const { data: variants, error } = await sb
-    .from('variants')
+
+  // Fetch counts for tabs (cheap aggregate query)
+  const [{ count: totAll }, { count: totFav }] = await Promise.all([
+    sb.from('variants').select('*', { count: 'exact', head: true }),
+    sb.from('variants').select('*', { count: 'exact', head: true }).eq('is_favorite', true),
+  ]);
+  totalCounts.all = totAll ?? 0;
+  totalCounts.fav = totFav ?? 0;
+  $('count-all').textContent = totalCounts.all || '';
+  $('count-fav').textContent = totalCounts.fav || '';
+
+  // Fetch the current page based on active tab.
+  let q = sb.from('variants')
     .select('*, jobs(prompt, total_cost_usd)')
     .order('created_at', { ascending: false })
-    .limit(200);
+    .range(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE - 1);
+
+  if (currentTab === 'favorites') q = q.eq('is_favorite', true);
+
+  const { data: variants, error } = await q;
   if (error) { console.error(error); return; }
-  render(variants || []);
+  allVariants = variants || [];
+  render();
 }
 
-function render(variants) {
+function render() {
   const wrap = $('ads');
-  if (!variants.length) {
-    wrap.innerHTML = ''; $('empty').style.display = 'block'; $('stats').textContent='—';
+  const totalForTab = currentTab === 'favorites' ? totalCounts.fav : totalCounts.all;
+
+  if (!allVariants.length) {
+    wrap.innerHTML = '';
+    $('empty').style.display = 'block';
+    $('empty').textContent = currentTab === 'favorites'
+      ? 'No favorites yet. Star an ad to add it here.'
+      : 'No ads yet. Submit a job on the left.';
+    $('pager').style.display = 'none';
+    $('stats').textContent = '—';
     return;
   }
   $('empty').style.display = 'none';
 
-  const total = variants.reduce((s,v) => s + Number(v.cost_usd || 0), 0);
-  const done = variants.filter(v => v.status === 'completed').length;
-  const pending = variants.filter(v => v.status === 'pending' || v.status === 'processing').length;
-  $('stats').textContent = `${variants.length} variants · ${done} done · ${pending} in-flight · total $${total.toFixed(4)}`;
+  // Stats line — for the current tab/page
+  const total = allVariants.reduce((s,v) => s + Number(v.cost_usd || 0), 0);
+  const done = allVariants.filter(v => v.status === 'completed').length;
+  const pending = allVariants.filter(v => v.status === 'pending' || v.status === 'processing').length;
+  const offset = currentPage * PAGE_SIZE;
+  $('stats').textContent =
+    `${offset + 1}–${offset + allVariants.length} of ${totalForTab} · ${done} done · ${pending} in-flight · page total $${total.toFixed(4)}`;
 
-  wrap.innerHTML = variants.map(v => renderAd(v)).join('');
+  wrap.innerHTML = allVariants.map(v => renderAd(v)).join('');
 
   // wire actions
   wrap.querySelectorAll('[data-act="download"]').forEach(b => {
-    b.onclick = () => download(b.dataset.path);
+    b.onclick = (e) => { e.stopPropagation(); download(b.dataset.path); };
   });
   wrap.querySelectorAll('[data-act="edit"]').forEach(b => {
-    b.onclick = () => openDerive(b.dataset.id, 'edit');
+    b.onclick = (e) => { e.stopPropagation(); openDerive(b.dataset.id, 'edit'); };
   });
   wrap.querySelectorAll('[data-act="reformat"]').forEach(b => {
-    b.onclick = () => openDerive(b.dataset.id, 'reformat');
+    b.onclick = (e) => { e.stopPropagation(); openDerive(b.dataset.id, 'reformat'); };
   });
   wrap.querySelectorAll('[data-act="reuse"]').forEach(b => {
-    b.onclick = () => openDerive(b.dataset.id, 'reuse');
+    b.onclick = (e) => { e.stopPropagation(); openDerive(b.dataset.id, 'reuse'); };
   });
+  wrap.querySelectorAll('[data-act="fav"]').forEach(b => {
+    b.onclick = (e) => { e.stopPropagation(); toggleFavorite(b.dataset.id); };
+  });
+  // Image click → lightbox
+  wrap.querySelectorAll('.thumb img').forEach(img => {
+    img.onclick = () => openLightbox(img.src);
+  });
+  // Prompt click → expand
+  wrap.querySelectorAll('.prompt').forEach(p => {
+    p.onclick = () => p.classList.toggle('expanded');
+  });
+
+  // Pagination controls
+  renderPager(totalForTab);
+}
+
+function renderPager(total) {
+  const pager = $('pager');
+  const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+  if (maxPage === 0) { pager.style.display = 'none'; return; }
+  pager.style.display = 'flex';
+  pager.innerHTML = `
+    <button class="btn ghost small" id="page-first" ${currentPage === 0 ? 'disabled' : ''}>« First</button>
+    <button class="btn ghost small" id="page-prev"  ${currentPage === 0 ? 'disabled' : ''}>‹ Prev</button>
+    <span class="info">page ${currentPage + 1} of ${maxPage + 1}</span>
+    <button class="btn ghost small" id="page-next"  ${currentPage >= maxPage ? 'disabled' : ''}>Next ›</button>
+    <button class="btn ghost small" id="page-last"  ${currentPage >= maxPage ? 'disabled' : ''}>Last »</button>
+  `;
+  $('page-first').onclick = () => { currentPage = 0; refresh(true); };
+  $('page-prev').onclick  = () => { currentPage = Math.max(0, currentPage - 1); refresh(true); };
+  $('page-next').onclick  = () => { currentPage = Math.min(maxPage, currentPage + 1); refresh(true); };
+  $('page-last').onclick  = () => { currentPage = maxPage; refresh(true); };
 }
 
 function renderAd(v) {
   const j = v.jobs || {};
-  const aspectClass = v.aspect === '1:1' ? 'square' : '';
+  const aspectClass = v.aspect === '1:1' ? 'square' : v.aspect === '16:9' ? 'wide' : '';
   const thumb = v.status === 'completed' && v.output_path
     ? `<img loading="lazy" src="${publicUrl(v.output_path)}" alt="">`
     : `<span>${v.status === 'failed' ? '⚠ ' + (v.error || 'failed').slice(0,80) : v.status + '…'}</span>`;
   const derivedLabel = v.parent_variant_id ? ' · derived' : '';
-  // Decide what "reformat" means — opposite aspect of current.
-  const otherAspect = v.aspect === '9:16' ? '1:1' : '9:16';
+
+  // "Reformat" cycles to the next aspect.
+  const ASPECTS = ['9:16', '1:1', '16:9'];
+  const otherAspect = ASPECTS[(ASPECTS.indexOf(v.aspect) + 1) % 3];
+
+  const star = v.is_favorite
+    ? `<button class="star on" data-act="fav" data-id="${v.id}" title="Unfavorite">★</button>`
+    : `<button class="star off" data-act="fav" data-id="${v.id}" title="Favorite">☆</button>`;
+
   return `
     <div class="ad ${aspectClass}">
       <div class="thumb">
         <span class="badge">${v.aspect}${derivedLabel}</span>
         <span class="badge aspect">${v.quality}</span>
+        ${v.status === 'completed' ? star : ''}
         ${thumb}
       </div>
       <div class="body">
-        <div class="prompt">${escape(v.edit_prompt || j.prompt || '')}</div>
+        <div class="prompt" title="Click to expand">${escape(v.edit_prompt || j.prompt || '')}</div>
         <div class="meta-row">
           <span class="status ${v.status}">${v.status}</span>
           <span class="cost">${v.cost_usd != null ? '$'+Number(v.cost_usd).toFixed(4) : '—'}</span>
@@ -502,8 +652,8 @@ function renderAd(v) {
       <div class="actions">
         ${v.status === 'completed' ? `
           <button class="btn small" data-act="download" data-path="${v.output_path}" title="Download PNG">Download</button>
-          <button class="btn ghost small" data-act="edit" data-id="${v.id}" title="Modify this ad with a freeform prompt">Edit</button>
-          <button class="btn ghost small" data-act="reformat" data-id="${v.id}" title="Make a ${otherAspect} version of this ad">${otherAspect}</button>
+          <button class="btn ghost small" data-act="edit" data-id="${v.id}" title="Modify with a freeform prompt">Edit</button>
+          <button class="btn ghost small" data-act="reformat" data-id="${v.id}" title="Make a ${otherAspect} version">${otherAspect}</button>
           <button class="btn ghost small" data-act="reuse" data-id="${v.id}" title="Use this image as reference for a brand-new ad">Reuse</button>
         ` : `<button class="btn ghost small" disabled>Waiting…</button>`}
       </div>
@@ -537,6 +687,48 @@ async function download(path) {
   a.href = url; a.download = path.split('/').pop(); a.click();
   URL.revokeObjectURL(url);
 }
+
+// ---- favorite toggle ----
+async function toggleFavorite(id) {
+  const variant = allVariants.find(v => v.id === id);
+  if (!variant) return;
+  const newVal = !variant.is_favorite;
+  // Optimistic UI
+  variant.is_favorite = newVal;
+  render();
+  const { error } = await sb.from('variants').update({ is_favorite: newVal }).eq('id', id);
+  if (error) {
+    // revert
+    variant.is_favorite = !newVal;
+    alert('failed to update: ' + error.message);
+    render();
+  } else {
+    // refresh counts
+    refresh(true);
+  }
+}
+
+// ---- tabs ----
+document.querySelectorAll('.tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    currentTab = t.dataset.tab;
+    currentPage = 0;
+    refresh(true);
+  };
+});
+
+// ---- lightbox ----
+function openLightbox(src) {
+  $('lightbox-img').src = src;
+  $('lightbox').classList.add('open');
+}
+$('lightbox-close').onclick = () => $('lightbox').classList.remove('open');
+$('lightbox').onclick = (e) => { if (e.target.id === 'lightbox') $('lightbox').classList.remove('open'); };
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') $('lightbox').classList.remove('open');
+});
 
 // ---- derive modal (handles edit / reformat / reuse-as-reference) ----
 let deriveState = { variantId: null, parent: null, mode: null };
@@ -603,6 +795,7 @@ $('derive-cancel').onclick = () => $('derive-modal').classList.remove('open');
 const UI_ASPECT_TO_SIZE = {
   '9:16': '1152x2048',
   '1:1':  '1024x1024',
+  '16:9': '1920x1088',
 };
 
 $('derive-submit').onclick = async () => {
@@ -644,11 +837,16 @@ $('derive-submit').onclick = async () => {
   }
 };
 
-// ---- live polling: every 5s if anything is in-flight ----
+// ---- smart polling: only refresh when there's pending/processing work ----
+// When everything is settled, no polling. When something is in-flight, poll
+// every 15s. Reduces visual flicker and unnecessary network calls.
 setInterval(() => {
   if (document.hidden) return;
-  if (sb) refresh();
-}, 5000);
+  if (!sb) return;
+  // Only poll if at least one variant on the current page is in-flight
+  const inFlight = allVariants.some(v => v.status === 'pending' || v.status === 'processing');
+  if (inFlight) refresh(false);
+}, 15000);
 </script>
 </body>
 </html>
