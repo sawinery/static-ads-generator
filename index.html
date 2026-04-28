@@ -137,8 +137,16 @@
   .lightbox .close { position:absolute; top:16px; right:20px; color:var(--ink); background:transparent; border:0; font-size:28px; cursor:pointer; line-height:1; }
   .ad .body { padding:10px 12px; border-top:1px solid var(--line); }
   .ad .body .prompt { font-size:12px; color:var(--ink-dim); display:-webkit-box; -webkit-line-clamp:6; -webkit-box-orient:vertical; overflow:hidden; min-height:34px; cursor:pointer; transition:all 0.2s; }
-  .ad .body .prompt.expanded { -webkit-line-clamp:unset; max-height:none; }
+  .ad .body .prompt.expanded { -webkit-line-clamp:unset; max-height:none; display:block; }
   .ad .body .prompt:hover { color:var(--ink); }
+  .ad .body .prompt .final-prompt-section {
+    margin-top:8px; padding-top:8px; border-top:1px dashed var(--line);
+    font-size:11px; color:var(--ink-low); white-space:pre-wrap;
+  }
+  .ad .body .prompt .final-prompt-label {
+    font-family:var(--mono); font-size:9.5px; color:var(--accent-2);
+    text-transform:uppercase; letter-spacing:.08em; margin-bottom:4px;
+  }
   .ad .meta-row { display:flex; justify-content:space-between; font-family:var(--mono); font-size:10.5px; color:var(--ink-low); margin-top:8px; }
   .ad .meta-row .cost { color:var(--accent-2); }
   .ad .actions { display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px; border-top:1px solid var(--line); background:var(--bg); }
@@ -619,6 +627,18 @@ function renderPager(total) {
   $('page-last').onclick  = () => { currentPage = maxPage; refresh(true); };
 }
 
+function promptDisplay(v, j) {
+  const original = v.edit_prompt || j.prompt || '';
+  const final = v.final_prompt;
+  // Only show "final" section if it exists AND differs from the original
+  // (i.e., safe zones or variation hints were appended).
+  if (!final || final.trim() === original.trim()) {
+    return escape(original);
+  }
+  return escape(original) +
+    `<div class="final-prompt-section"><div class="final-prompt-label">Final prompt sent to model:</div>${escape(final)}</div>`;
+}
+
 function renderAd(v) {
   const j = v.jobs || {};
   const aspectClass = v.aspect === '1:1' ? 'square' : v.aspect === '16:9' ? 'wide' : '';
@@ -644,7 +664,7 @@ function renderAd(v) {
         ${thumb}
       </div>
       <div class="body">
-        <div class="prompt" title="Click to expand">${escape(v.edit_prompt || j.prompt || '')}</div>
+        <div class="prompt" title="Click to expand">${promptDisplay(v, j)}</div>
         <div class="meta-row">
           <span class="status ${v.status}">${v.status}</span>
           <span class="cost">${v.cost_usd != null ? '$'+Number(v.cost_usd).toFixed(4) : '—'}</span>
