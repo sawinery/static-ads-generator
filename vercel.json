@@ -1,5 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "sh build.sh",
-  "outputDirectory": "web"
+  "buildCommand": "echo \"window.SUPABASE_CONFIG = { url: '$SUPABASE_URL', key: '$SUPABASE_KEY' };\" > web/env.js",
+  "outputDirectory": "web",
+  "framework": null
 }
