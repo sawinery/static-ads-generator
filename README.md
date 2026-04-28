@@ -75,9 +75,20 @@ select vault.create_secret('YOUR_SERVICE_ROLE_KEY', 'service_role_key');
 
 Two ways:
 
-**Option A — Just open the file locally.** Download `web/index.html`, double-click to open in your browser. Works fine for personal use.
+**Option A — Just open the file locally.** Download `web/index.html`, double-click to open in your browser.
 
-**Option B — Deploy to Vercel/Netlify via GitHub.** Push the repo to GitHub. On Vercel: New Project → Import the repo → set root directory to `web/` → Deploy. Done.
+**Option B — Deploy to Vercel via GitHub (recommended).** Push the repo to GitHub. On Vercel: New Project → Import the repo → Deploy. The included `vercel.json` + `build.sh` handle everything.
+
+#### Skip the manual key entry (optional)
+
+If you want the app to auto-connect without typing keys every time, set these as **Vercel project env variables** (Vercel dashboard → your project → Settings → Environment Variables):
+
+- `SUPABASE_URL` = your project URL (e.g. `https://xxxxx.supabase.co`)
+- `SUPABASE_KEY` = your service-role key
+
+Then redeploy. The Connection panel disappears and the app auto-connects.
+
+> **Heads up:** the key gets baked into the public bundle at build time. Anyone who finds your Vercel URL and views source can read it. That's fine for a personal tool you don't share, but DO NOT do this if your Vercel URL might leak — use the manual entry path instead.
 
 ### 8. Use it
 
