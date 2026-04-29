@@ -960,7 +960,7 @@ function renderAd(v) {
   // Prefer the small thumbnail for grid display; fall back to the full image
   // for old variants that were generated before thumbnails were a thing.
   const thumbSrc = v.status === 'completed'
-    ? (v.thumb_path || v.output_path)
+    ? ((v.thumb_path && v.thumb_path !== 'FAILED') ? v.thumb_path : v.output_path)
     : null;
   const thumb = thumbSrc
     ? `<img loading="lazy" src="${publicUrl(thumbSrc)}" data-full-path="${v.output_path}" alt="">`
