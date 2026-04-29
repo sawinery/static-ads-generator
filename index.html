@@ -890,9 +890,26 @@ function render() {
       openParentPeek(parseInt(b.dataset.fromSeq, 10), b.dataset.parentId);
     };
   });
-  // Image click → lightbox
+  // Image click → lightbox (full size, not thumb)
   wrap.querySelectorAll('.thumb img').forEach(img => {
-    img.onclick = () => openLightbox(img.src);
+    img.onclick = () => {
+      const fullPath = img.getAttribute('data-full-path');
+      // Resolve full image's signed URL for the lightbox.
+      // publicUrl() returns the placeholder + async-swaps; for the lightbox we
+      // want to wait briefly for the signed URL.
+      const cached = readSignedCache(fullPath);
+      if (cached) {
+        openLightbox(cached);
+      } else {
+        // Sign on demand and open
+        sb.storage.from('ad-outputs').createSignedUrl(fullPath, SIGN_TTL_SECONDS).then(({data}) => {
+          if (data?.signedUrl) {
+            writeSignedCache(fullPath, data.signedUrl);
+            openLightbox(data.signedUrl);
+          }
+        });
+      }
+    };
   });
   // Prompt click → expand
   wrap.querySelectorAll('.prompt').forEach(p => {
@@ -940,8 +957,13 @@ function promptDisplay(v, j) {
 function renderAd(v) {
   const j = v.jobs || {};
   const aspectClass = v.aspect === '1:1' ? 'square' : v.aspect === '16:9' ? 'wide' : '';
-  const thumb = v.status === 'completed' && v.output_path
-    ? `<img loading="lazy" src="${publicUrl(v.output_path)}" alt="">`
+  // Prefer the small thumbnail for grid display; fall back to the full image
+  // for old variants that were generated before thumbnails were a thing.
+  const thumbSrc = v.status === 'completed'
+    ? (v.thumb_path || v.output_path)
+    : null;
+  const thumb = thumbSrc
+    ? `<img loading="lazy" src="${publicUrl(thumbSrc)}" data-full-path="${v.output_path}" alt="">`
     : `<span>${v.status === 'failed' ? '⚠ ' + (v.error || 'failed').slice(0,80) : v.status + '…'}</span>`;
   const derivedLabel = v.parent_variant_id ? ' · derived' : '';
 
@@ -1004,21 +1026,44 @@ function renderAd(v) {
 
 function escape(s) { return (s||'').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
 
+// Cache signed URLs in localStorage so they persist across page loads.
+// We sign for 24h and consider entries fresh for 23h (small buffer for clock skew).
+// This dramatically reduces re-signing roundtrips and lets the browser HTTP
+// cache do its job between sessions.
+const SIGN_TTL_SECONDS = 86400;       // 24h
+const FRESH_WINDOW_MS = 23 * 3600 * 1000;
+function readSignedCache(path) {
+  try {
+    const raw = localStorage.getItem(`signed:${path}`);
+    if (!raw) return null;
+    const { url, ts } = JSON.parse(raw);
+    if (Date.now() - ts > FRESH_WINDOW_MS) return null;
+    return url;
+  } catch { return null; }
+}
+function writeSignedCache(path, url) {
+  try {
+    localStorage.setItem(`signed:${path}`, JSON.stringify({ url, ts: Date.now() }));
+  } catch { /* localStorage might be full — ignore */ }
+}
+
 function publicUrl(path) {
-  // signed URLs would be safer for private buckets; for an internal tool we just use createSignedUrl on demand
-  // here we return a placeholder; we replace with signed URL after render
-  const cacheKey = `signed:${path}`;
-  const cached = sessionStorage.getItem(cacheKey);
+  // Returns a signed URL for the given storage path. Cached in localStorage.
+  // If not yet cached, returns the raw path as a placeholder and async-swaps
+  // every <img src="path"> with the signed URL once it arrives.
+  const cached = readSignedCache(path);
   if (cached) return cached;
-  // async sign + swap
-  sb.storage.from('ad-outputs').createSignedUrl(path, 3600).then(({data}) => {
+  sb.storage.from('ad-outputs').createSignedUrl(path, SIGN_TTL_SECONDS).then(({data}) => {
     if (data?.signedUrl) {
-      sessionStorage.setItem(cacheKey, data.signedUrl);
-      // swap any IMG using this path
-      document.querySelectorAll(`img[src="${path}"]`).forEach(img => img.src = data.signedUrl);
+      writeSignedCache(path, data.signedUrl);
+      document.querySelectorAll(`img[src="${CSS.escape(path)}"]`).forEach(img => img.src = data.signedUrl);
+      // (Some browsers don't have CSS.escape; fallback below.)
+      document.querySelectorAll('img').forEach(img => {
+        if (img.getAttribute('src') === path) img.src = data.signedUrl;
+      });
     }
   });
-  return path; // temporary; will be swapped
+  return path;
 }
 
 async function download(path) {
