@@ -115,11 +115,59 @@
   .ad .thumb .badge.aspect { right:42px; }              /* leave room for star */
 
   /* tabs */
-  .tabs { display:flex; gap:4px; margin-right:10px; padding:3px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); }
-  .tab { background:transparent; color:var(--ink-dim); border:0; padding:5px 12px; border-radius:4px; font-size:12px; font-weight:500; cursor:pointer; }
+  .tabs { display:flex; gap:4px; flex-wrap:wrap; align-items:center; padding:3px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); max-width:70%; }
+  .tab { background:transparent; color:var(--ink-dim); border:0; padding:5px 12px; border-radius:4px; font-size:12px; font-weight:500; cursor:pointer; display:inline-flex; align-items:center; gap:5px; position:relative; }
   .tab.active { background:var(--accent); color:#0e0f12; }
   .tab:hover:not(.active) { color:var(--ink); }
-  .tab .count { font-family:var(--mono); font-size:10px; opacity:0.7; margin-left:4px; }
+  .tab .count { font-family:var(--mono); font-size:10px; opacity:0.7; }
+  .tab .x {
+    margin-left:2px; opacity:0.4; cursor:pointer;
+    font-size:14px; line-height:1; padding:0 2px;
+  }
+  .tab .x:hover { opacity:1; color:var(--danger); }
+  .tab.add { background:transparent; color:var(--ink-low); font-weight:600; padding:5px 9px; }
+  .tab.add:hover { color:var(--accent); }
+
+  /* card seq number + "from #X" */
+  .ad .body .seq {
+    font-family:var(--mono); font-size:10px; color:var(--ink-low);
+    letter-spacing:.04em;
+  }
+  .ad .body .seq strong { color:var(--ink); font-weight:600; }
+  .ad .body .from-link {
+    color:var(--accent); cursor:pointer; text-decoration:none;
+    font-family:var(--mono); font-size:10px; margin-left:6px;
+  }
+  .ad .body .from-link:hover { text-decoration:underline; }
+
+  /* popover (collection picker) */
+  .popover-bg {
+    position:fixed; inset:0; z-index:55; background:transparent;
+  }
+  .popover {
+    position:fixed; z-index:56;
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:0 8px 30px rgba(0,0,0,.5);
+    width:240px; max-height:300px; display:flex; flex-direction:column;
+  }
+  .popover-header {
+    padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--ink-dim); border-bottom:1px solid var(--line);
+  }
+  .popover-body {
+    overflow-y:auto; padding:6px; flex:1;
+  }
+  .popover-row {
+    display:flex; align-items:center; gap:8px; padding:6px 8px;
+    cursor:pointer; border-radius:4px; font-size:12.5px;
+  }
+  .popover-row:hover { background:var(--panel-2); }
+  .popover-row input[type="checkbox"] { accent-color:var(--accent); margin:0; }
+  .popover-newrow {
+    display:flex; gap:6px; padding:8px; border-top:1px solid var(--line);
+  }
+  .popover-newrow input { flex:1; font-size:12px; padding:5px 8px; }
+  .popover-newrow .btn { padding:4px 10px; font-size:11px; }
 
   /* pagination */
   .pager { display:flex; gap:4px; align-items:center; justify-content:center; margin-top:18px; padding:12px 0; }
@@ -151,6 +199,10 @@
   .ad .meta-row .cost { color:var(--accent-2); }
   .ad .actions { display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px; border-top:1px solid var(--line); background:var(--bg); }
   .ad .actions .btn { flex:1 1 calc(50% - 3px); min-width:0; padding:5px 6px; font-size:11.5px; }
+  .ad .actions .btn.reformat-done {
+    background:#1f3a2a; color:var(--accent); border:1px solid var(--accent);
+  }
+  .ad .actions .btn.reformat-done:hover { filter:brightness(1.15); }
 
   .status { font-family:var(--mono); font-size:10px; padding:1px 6px; border-radius:3px; text-transform:uppercase; letter-spacing:.05em; }
   .status.pending    { background:#3a3320; color:var(--accent-2); }
@@ -296,10 +348,7 @@
   <!-- RIGHT: jobs list -->
   <section class="pane-right">
     <div class="toolbar">
-      <div class="tabs">
-        <button class="tab active" data-tab="all">All <span class="count" id="count-all"></span></button>
-        <button class="tab" data-tab="favorites">★ Favorites <span class="count" id="count-fav"></span></button>
-      </div>
+      <div class="tabs" id="tabs"><!-- populated dynamically --></div>
       <button class="btn ghost small" id="refresh">Refresh</button>
       <div class="stats" id="stats">—</div>
     </div>
@@ -308,6 +357,31 @@
     <div id="pager" class="pager" style="display:none"></div>
   </section>
 </main>
+
+<!-- collection picker popover (anchored under the star button when clicked) -->
+<div class="popover-bg" id="picker-bg" style="display:none"></div>
+<div class="popover" id="picker" style="display:none">
+  <div class="popover-header">Add to collection</div>
+  <div class="popover-body" id="picker-body"><!-- checkboxes injected here --></div>
+  <div class="popover-newrow">
+    <input type="text" id="picker-newname" placeholder="New collection name…" maxlength="40">
+    <button class="btn small" id="picker-newbtn">Add</button>
+  </div>
+</div>
+
+<!-- "from #X" parent peek modal -->
+<div class="modal-bg" id="parent-modal">
+  <div class="modal" style="width:min(640px,92vw); padding:0;">
+    <div style="padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between;">
+      <div>
+        <div style="font-size:11px; color:var(--ink-low); font-family:var(--mono); letter-spacing:.06em;">PARENT</div>
+        <div id="parent-info" style="margin-top:2px; font-size:13px;"></div>
+      </div>
+      <button class="btn ghost small" id="parent-close">Close</button>
+    </div>
+    <div id="parent-body" style="padding:16px; max-height:70vh; overflow:auto;"></div>
+  </div>
+</div>
 
 <!-- lightbox -->
 <div class="lightbox" id="lightbox">
@@ -519,10 +593,13 @@ $('submit-batch').onclick = async () => {
 
 // ---- state ----
 const PAGE_SIZE = 50;
-let currentTab = 'all';        // 'all' | 'favorites'
-let currentPage = 0;           // 0-indexed
-let allVariants = [];          // cached from last fetch
-let totalCounts = { all: 0, fav: 0 };
+let currentTab = { kind: 'all' };  // { kind:'all' } | { kind:'collection', id, name } | { kind:'find', seq }
+let currentPage = 0;
+let allVariants = [];
+let totalAll = 0;
+let collections = [];              // [{id, name, count}]
+// For the picker popover, we cache which collections each variant is in:
+let variantMembership = {};        // variant_id -> Set<collection_id>
 
 // ---- refresh ----
 $('refresh').onclick = () => refresh(true);
@@ -530,40 +607,237 @@ $('refresh').onclick = () => refresh(true);
 async function refresh(userInitiated = false) {
   if (!sb) return;
 
-  // Fetch counts for tabs (cheap aggregate query)
-  const [{ count: totAll }, { count: totFav }] = await Promise.all([
+  // Fetch counts + collection list in parallel.
+  const [allRes, colsRes] = await Promise.all([
     sb.from('variants').select('*', { count: 'exact', head: true }),
-    sb.from('variants').select('*', { count: 'exact', head: true }).eq('is_favorite', true),
+    sb.from('collections').select('id, name, sort_order').order('sort_order').order('created_at'),
   ]);
-  totalCounts.all = totAll ?? 0;
-  totalCounts.fav = totFav ?? 0;
-  $('count-all').textContent = totalCounts.all || '';
-  $('count-fav').textContent = totalCounts.fav || '';
+  totalAll = allRes.count ?? 0;
+  collections = (colsRes.data ?? []).map(c => ({ ...c, count: 0 }));
 
-  // Fetch the current page based on active tab.
-  let q = sb.from('variants')
-    .select('*, jobs(prompt, total_cost_usd)')
-    .order('created_at', { ascending: false })
-    .range(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE - 1);
+  // Get per-collection counts in one query
+  if (collections.length) {
+    const { data: countData } = await sb
+      .from('variant_collections')
+      .select('collection_id');
+    const counts = {};
+    (countData ?? []).forEach(r => { counts[r.collection_id] = (counts[r.collection_id] ?? 0) + 1; });
+    collections.forEach(c => { c.count = counts[c.id] ?? 0; });
+  }
 
-  if (currentTab === 'favorites') q = q.eq('is_favorite', true);
+  renderTabs();
 
-  const { data: variants, error } = await q;
-  if (error) { console.error(error); return; }
-  allVariants = variants || [];
+  // Build the query for the current tab
+  let variantIdsForCollection = null;
+  if (currentTab.kind === 'collection') {
+    const { data: links, error: lerr } = await sb
+      .from('variant_collections')
+      .select('variant_id, added_at')
+      .eq('collection_id', currentTab.id)
+      .order('added_at', { ascending: false });
+    if (lerr) { console.error(lerr); return; }
+    variantIdsForCollection = (links ?? []).map(l => l.variant_id);
+    // Pageable manually
+    const slice = variantIdsForCollection.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+    if (slice.length === 0) {
+      allVariants = [];
+      render();
+      return;
+    }
+    const { data: variants, error } = await sb
+      .from('variants')
+      .select('*, jobs(prompt, total_cost_usd)')
+      .in('id', slice);
+    if (error) { console.error(error); return; }
+    // Preserve the order from links (most recently added first)
+    const byId = Object.fromEntries((variants ?? []).map(v => [v.id, v]));
+    allVariants = slice.map(id => byId[id]).filter(Boolean);
+  } else if (currentTab.kind === 'find') {
+    // "find this variant" mode — show only the matching seq
+    const { data: variants, error } = await sb
+      .from('variants')
+      .select('*, jobs(prompt, total_cost_usd)')
+      .eq('seq', currentTab.seq);
+    if (error) { console.error(error); return; }
+    allVariants = variants ?? [];
+  } else {
+    // 'all'
+    const { data: variants, error } = await sb
+      .from('variants')
+      .select('*, jobs(prompt, total_cost_usd)')
+      .order('created_at', { ascending: false })
+      .range(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE - 1);
+    if (error) { console.error(error); return; }
+    allVariants = variants ?? [];
+  }
+
+  // ============================================================================
+  // Post-process the fetched variants:
+  //
+  // 1. Reformat-derivatives (parent_variant_id set AND aspect != parent.aspect)
+  //    should NOT be shown as their own cards. Instead, attach them to their
+  //    parent's card under .reformats so the parent's "1:1 / 16:9 / 9:16"
+  //    button can show "this exists, click to view" instead of spawning a new
+  //    card.
+  //
+  // 2. Edit/reuse derivatives (parent_variant_id set AND aspect == parent.aspect)
+  //    DO get their own card. We need to look up parent.seq so the "from #X"
+  //    link can be rendered on those cards.
+  // ============================================================================
+
+  if (allVariants.length) {
+    // Collect parent IDs we'll need to resolve
+    const parentIds = [...new Set(allVariants.map(v => v.parent_variant_id).filter(Boolean))];
+
+    let parentMap = {}; // parent_id -> { seq, aspect }
+    if (parentIds.length) {
+      const { data: parents } = await sb
+        .from('variants')
+        .select('id, seq, aspect')
+        .in('id', parentIds);
+      parentMap = Object.fromEntries((parents ?? []).map(p => [p.id, p]));
+    }
+
+    // Find reformat children of any *visible* parent (so we can show their
+    // status on the parent card). Reformat = parent_variant_id set AND
+    // child.aspect != parent.aspect.
+    const visibleIds = allVariants.map(v => v.id);
+    let reformatsByParent = {};   // parent_id -> { '1:1': child, '16:9': child, ... }
+    if (visibleIds.length) {
+      const { data: kids } = await sb
+        .from('variants')
+        .select('*')
+        .in('parent_variant_id', visibleIds);
+      // We only attach the most recent reformat per (parent, aspect) pair —
+      // older reformats become "replaced" when a regenerate is clicked.
+      const sorted = (kids ?? []).sort((a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      for (const kid of sorted) {
+        const parent = allVariants.find(v => v.id === kid.parent_variant_id);
+        if (!parent) continue;
+        if (kid.aspect === parent.aspect) continue; // edit/reuse, not a reformat
+        if (!reformatsByParent[parent.id]) reformatsByParent[parent.id] = {};
+        if (!reformatsByParent[parent.id][kid.aspect]) {
+          reformatsByParent[parent.id][kid.aspect] = kid;
+        }
+      }
+    }
+
+    // Filter + decorate
+    allVariants = allVariants.filter(v => {
+      // Drop reformat-derivatives (they appear as part of their parent now)
+      if (v.parent_variant_id) {
+        const p = parentMap[v.parent_variant_id];
+        if (p && v.aspect !== p.aspect) return false; // reformat — hide
+      }
+      return true;
+    }).map(v => {
+      // Attach parent_seq for edit/reuse cards
+      if (v.parent_variant_id) {
+        const p = parentMap[v.parent_variant_id];
+        if (p) v.parent_seq = p.seq;
+      }
+      // Attach reformats for parent cards
+      if (reformatsByParent[v.id]) {
+        v.reformats = reformatsByParent[v.id];
+      }
+      return v;
+    });
+  }
+
+  // Refresh membership cache for visible variants (so we know which checkboxes
+  // to pre-tick when the picker opens for a card).
+  if (allVariants.length) {
+    const ids = allVariants.map(v => v.id);
+    const { data: members } = await sb
+      .from('variant_collections')
+      .select('variant_id, collection_id')
+      .in('variant_id', ids);
+    variantMembership = {};
+    (members ?? []).forEach(m => {
+      if (!variantMembership[m.variant_id]) variantMembership[m.variant_id] = new Set();
+      variantMembership[m.variant_id].add(m.collection_id);
+    });
+  }
+
   render();
+}
+
+function renderTabs() {
+  const tabs = $('tabs');
+  let html = `<button class="tab ${currentTab.kind === 'all' ? 'active' : ''}" data-tab-all>All <span class="count">${totalAll}</span></button>`;
+  for (const c of collections) {
+    const active = currentTab.kind === 'collection' && currentTab.id === c.id;
+    html += `<button class="tab ${active ? 'active' : ''}" data-tab-col="${c.id}">${escape(c.name)} <span class="count">${c.count}</span><span class="x" data-del-col="${c.id}" title="Delete collection">×</span></button>`;
+  }
+  if (currentTab.kind === 'find') {
+    html += `<button class="tab active" data-tab-clear>Find #${currentTab.seq} <span class="x" data-tab-clear style="margin-left:6px">×</span></button>`;
+  }
+  html += `<button class="tab add" id="tab-new" title="New collection">+</button>`;
+  tabs.innerHTML = html;
+
+  tabs.querySelector('[data-tab-all]').onclick = () => switchTab({ kind: 'all' });
+  tabs.querySelectorAll('[data-tab-col]').forEach(b => {
+    b.onclick = (e) => {
+      if (e.target.matches('[data-del-col]')) return;
+      const id = b.dataset.tabCol;
+      const col = collections.find(c => c.id === id);
+      if (col) switchTab({ kind: 'collection', id, name: col.name });
+    };
+  });
+  tabs.querySelectorAll('[data-del-col]').forEach(x => {
+    x.onclick = async (e) => {
+      e.stopPropagation();
+      const id = x.dataset.delCol;
+      const col = collections.find(c => c.id === id);
+      if (!col) return;
+      if (!confirm(`Delete collection "${col.name}"? Variants stay; only the collection itself is removed.`)) return;
+      const { error } = await sb.from('collections').delete().eq('id', id);
+      if (error) { alert(error.message); return; }
+      if (currentTab.kind === 'collection' && currentTab.id === id) {
+        currentTab = { kind: 'all' };
+      }
+      refresh(true);
+    };
+  });
+  tabs.querySelectorAll('[data-tab-clear]').forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); switchTab({ kind: 'all' }); };
+  });
+  $('tab-new').onclick = async () => {
+    const name = prompt('Collection name:');
+    if (!name || !name.trim()) return;
+    const { data, error } = await sb.from('collections').insert({ name: name.trim() }).select().single();
+    if (error) { alert(error.message); return; }
+    switchTab({ kind: 'collection', id: data.id, name: data.name });
+  };
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  currentPage = 0;
+  refresh(true);
 }
 
 function render() {
   const wrap = $('ads');
-  const totalForTab = currentTab === 'favorites' ? totalCounts.fav : totalCounts.all;
+  let totalForTab;
+  let emptyMsg;
+  if (currentTab.kind === 'all') {
+    totalForTab = totalAll;
+    emptyMsg = 'No ads yet. Submit a job on the left.';
+  } else if (currentTab.kind === 'collection') {
+    const col = collections.find(c => c.id === currentTab.id);
+    totalForTab = col ? col.count : 0;
+    emptyMsg = `No ads in "${currentTab.name}" yet. Star an ad to add it here.`;
+  } else if (currentTab.kind === 'find') {
+    totalForTab = allVariants.length;
+    emptyMsg = `No variant with #${currentTab.seq}.`;
+  }
 
   if (!allVariants.length) {
     wrap.innerHTML = '';
     $('empty').style.display = 'block';
-    $('empty').textContent = currentTab === 'favorites'
-      ? 'No favorites yet. Star an ad to add it here.'
-      : 'No ads yet. Submit a job on the left.';
+    $('empty').textContent = emptyMsg;
     $('pager').style.display = 'none';
     $('stats').textContent = '—';
     return;
@@ -588,13 +862,33 @@ function render() {
     b.onclick = (e) => { e.stopPropagation(); openDerive(b.dataset.id, 'edit'); };
   });
   wrap.querySelectorAll('[data-act="reformat"]').forEach(b => {
-    b.onclick = (e) => { e.stopPropagation(); openDerive(b.dataset.id, 'reformat'); };
+    // Direct create — no modal — generate the chosen aspect using the parent
+    // image as reference and a "same content, different aspect" prompt.
+    b.onclick = (e) => {
+      e.stopPropagation();
+      directReformat(b.dataset.id, b.dataset.aspect);
+    };
+  });
+  wrap.querySelectorAll('[data-act="reformat-open"]').forEach(b => {
+    // Open the existing reformat in a manage modal (lightbox + download +
+    // regenerate)
+    b.onclick = (e) => {
+      e.stopPropagation();
+      openReformatManage(b.dataset.id, b.dataset.reformatId, b.dataset.aspect);
+    };
   });
   wrap.querySelectorAll('[data-act="reuse"]').forEach(b => {
     b.onclick = (e) => { e.stopPropagation(); openDerive(b.dataset.id, 'reuse'); };
   });
-  wrap.querySelectorAll('[data-act="fav"]').forEach(b => {
-    b.onclick = (e) => { e.stopPropagation(); toggleFavorite(b.dataset.id); };
+  wrap.querySelectorAll('[data-act="star"]').forEach(b => {
+    b.onclick = (e) => { e.stopPropagation(); openPicker(b, b.dataset.id); };
+  });
+  wrap.querySelectorAll('[data-from-seq]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      openParentPeek(parseInt(b.dataset.fromSeq, 10), b.dataset.parentId);
+    };
   });
   // Image click → lightbox
   wrap.querySelectorAll('.thumb img').forEach(img => {
@@ -605,8 +899,12 @@ function render() {
     p.onclick = () => p.classList.toggle('expanded');
   });
 
-  // Pagination controls
-  renderPager(totalForTab);
+  // Pagination controls (skip for 'find' single-result mode)
+  if (currentTab.kind === 'find') {
+    $('pager').style.display = 'none';
+  } else {
+    renderPager(totalForTab);
+  }
 }
 
 function renderPager(total) {
@@ -647,13 +945,35 @@ function renderAd(v) {
     : `<span>${v.status === 'failed' ? '⚠ ' + (v.error || 'failed').slice(0,80) : v.status + '…'}</span>`;
   const derivedLabel = v.parent_variant_id ? ' · derived' : '';
 
-  // "Reformat" cycles to the next aspect.
-  const ASPECTS = ['9:16', '1:1', '16:9'];
-  const otherAspect = ASPECTS[(ASPECTS.indexOf(v.aspect) + 1) % 3];
+  // Star reflects whether the variant is in ANY collection
+  const inAny = (variantMembership[v.id] && variantMembership[v.id].size > 0);
+  const star = inAny
+    ? `<button class="star on" data-act="star" data-id="${v.id}" title="Manage collections">★</button>`
+    : `<button class="star off" data-act="star" data-id="${v.id}" title="Add to collection">☆</button>`;
 
-  const star = v.is_favorite
-    ? `<button class="star on" data-act="fav" data-id="${v.id}" title="Unfavorite">★</button>`
-    : `<button class="star off" data-act="fav" data-id="${v.id}" title="Favorite">☆</button>`;
+  // From #X link if this is a derived variant (edit/reuse) — reformat-derivatives
+  // are filtered out before this point, so any v.parent_seq here is from a
+  // same-aspect derivative.
+  const fromLink = v.parent_seq
+    ? `<a class="from-link" data-from-seq="${v.parent_seq}" data-parent-id="${v.parent_variant_id}" title="See parent">from #${v.parent_seq}</a>`
+    : '';
+
+  // Reformat buttons: render the OTHER two aspects. If a reformat already
+  // exists in v.reformats[aspect], the button is green and clicking opens its
+  // lightbox/manage modal. Otherwise, the button is normal and clicking
+  // creates a new reformat.
+  const ASPECTS = ['9:16', '1:1', '16:9'];
+  const otherAspects = ASPECTS.filter(a => a !== v.aspect);
+  const reformatBtns = otherAspects.map(aspect => {
+    const existing = v.reformats?.[aspect];
+    if (existing && existing.status === 'completed') {
+      return `<button class="btn small reformat-done" data-act="reformat-open" data-id="${v.id}" data-reformat-id="${existing.id}" data-aspect="${aspect}" title="View/manage the ${aspect} version">${aspect} ✓</button>`;
+    } else if (existing && (existing.status === 'pending' || existing.status === 'processing')) {
+      return `<button class="btn ghost small" disabled title="${aspect} is generating…">${aspect} ⋯</button>`;
+    } else {
+      return `<button class="btn ghost small" data-act="reformat" data-id="${v.id}" data-aspect="${aspect}" title="Make a ${aspect} version">${aspect}</button>`;
+    }
+  }).join('');
 
   return `
     <div class="ad ${aspectClass}">
@@ -666,6 +986,7 @@ function renderAd(v) {
       <div class="body">
         <div class="prompt" title="Click to expand">${promptDisplay(v, j)}</div>
         <div class="meta-row">
+          <span class="seq"><strong>#${v.seq ?? '—'}</strong>${fromLink}</span>
           <span class="status ${v.status}">${v.status}</span>
           <span class="cost">${v.cost_usd != null ? '$'+Number(v.cost_usd).toFixed(4) : '—'}</span>
         </div>
@@ -674,7 +995,7 @@ function renderAd(v) {
         ${v.status === 'completed' ? `
           <button class="btn small" data-act="download" data-path="${v.output_path}" title="Download PNG">Download</button>
           <button class="btn ghost small" data-act="edit" data-id="${v.id}" title="Modify with a freeform prompt">Edit</button>
-          <button class="btn ghost small" data-act="reformat" data-id="${v.id}" title="Make a ${otherAspect} version">${otherAspect}</button>
+          ${reformatBtns}
           <button class="btn ghost small" data-act="reuse" data-id="${v.id}" title="Use this image as reference for a brand-new ad">Reuse</button>
         ` : `<button class="btn ghost small" disabled>Waiting…</button>`}
       </div>
@@ -710,35 +1031,204 @@ async function download(path) {
 }
 
 // ---- favorite toggle ----
-async function toggleFavorite(id) {
-  const variant = allVariants.find(v => v.id === id);
-  if (!variant) return;
-  const newVal = !variant.is_favorite;
-  // Optimistic UI
-  variant.is_favorite = newVal;
-  render();
-  const { error } = await sb.from('variants').update({ is_favorite: newVal }).eq('id', id);
-  if (error) {
-    // revert
-    variant.is_favorite = !newVal;
-    alert('failed to update: ' + error.message);
-    render();
+// ---- collection picker (opens when star is clicked) ----
+let pickerVariantId = null;
+
+function openPicker(anchorEl, variantId) {
+  pickerVariantId = variantId;
+  // Position the popover under the anchor
+  const r = anchorEl.getBoundingClientRect();
+  const pop = $('picker');
+  $('picker-bg').style.display = 'block';
+  pop.style.display = 'flex';
+  // Try to position below; if it'd go off-screen, position above
+  const popH = 280; // approximate
+  let top = r.bottom + 6;
+  if (top + popH > window.innerHeight - 10) top = r.top - popH - 6;
+  let left = Math.min(r.left, window.innerWidth - 250);
+  pop.style.top = `${Math.max(10, top)}px`;
+  pop.style.left = `${Math.max(10, left)}px`;
+
+  // Render checkboxes for each collection
+  const member = variantMembership[variantId] ?? new Set();
+  const body = $('picker-body');
+  if (collections.length === 0) {
+    body.innerHTML = `<div class="popover-row" style="color:var(--ink-low); cursor:default;">No collections yet. Create one below.</div>`;
   } else {
-    // refresh counts
-    refresh(true);
+    body.innerHTML = collections.map(c => `
+      <label class="popover-row">
+        <input type="checkbox" data-col="${c.id}" ${member.has(c.id) ? 'checked' : ''}>
+        <span>${escape(c.name)}</span>
+      </label>`).join('');
+    body.querySelectorAll('input[data-col]').forEach(cb => {
+      cb.onchange = async () => {
+        const colId = cb.dataset.col;
+        if (cb.checked) {
+          await sb.from('variant_collections').insert({ variant_id: variantId, collection_id: colId });
+        } else {
+          await sb.from('variant_collections').delete()
+            .eq('variant_id', variantId).eq('collection_id', colId);
+        }
+        // Update local membership cache
+        if (!variantMembership[variantId]) variantMembership[variantId] = new Set();
+        if (cb.checked) variantMembership[variantId].add(colId);
+        else variantMembership[variantId].delete(colId);
+        // Re-render the card star + tab counts
+        refresh(false);
+      };
+    });
   }
+  $('picker-newname').value = '';
+  setTimeout(() => $('picker-newname').focus(), 50);
 }
 
-// ---- tabs ----
-document.querySelectorAll('.tab').forEach(t => {
-  t.onclick = () => {
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-    t.classList.add('active');
-    currentTab = t.dataset.tab;
-    currentPage = 0;
-    refresh(true);
-  };
+function closePicker() {
+  $('picker').style.display = 'none';
+  $('picker-bg').style.display = 'none';
+  pickerVariantId = null;
+}
+$('picker-bg').onclick = closePicker;
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('picker').style.display === 'flex') closePicker();
 });
+
+$('picker-newbtn').onclick = async () => {
+  const name = $('picker-newname').value.trim();
+  if (!name) return;
+  const { data, error } = await sb.from('collections').insert({ name }).select().single();
+  if (error) { alert(error.message); return; }
+  // Auto-add the current variant to the new collection
+  if (pickerVariantId) {
+    await sb.from('variant_collections').insert({ variant_id: pickerVariantId, collection_id: data.id });
+  }
+  await refresh(false);
+  // Re-open picker so the user sees the new collection ticked
+  const stillVar = pickerVariantId;
+  closePicker();
+  if (stillVar) {
+    setTimeout(() => {
+      const star = document.querySelector(`[data-act="star"][data-id="${stillVar}"]`);
+      if (star) openPicker(star, stillVar);
+    }, 50);
+  }
+};
+$('picker-newname').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('picker-newbtn').click();
+});
+
+// ---- reformat: direct-create (no modal) ----
+async function directReformat(parentVariantId, aspect) {
+  // We need parent's quality. The parent is already in allVariants.
+  const parent = allVariants.find(v => v.id === parentVariantId);
+  if (!parent) return;
+  const size = ({ '9:16': '1152x2048', '1:1': '1024x1024', '16:9': '1920x1088' })[aspect];
+  const promptText =
+    `Recreate this ad adapted to a ${aspect} aspect ratio. Keep the same composition, ` +
+    `colors, headline, layout, and overall brand feel — just reflow for the new shape.`;
+  const { error } = await sb.from('variants').insert({
+    job_id: parent.job_id,
+    parent_variant_id: parent.id,
+    aspect,
+    size,
+    quality: parent.quality,
+    edit_prompt: promptText,
+  });
+  if (error) { alert(error.message); return; }
+  // Best-effort kick + refresh
+  fetch(`${$('sb-url').value}/functions/v1/process-job`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${$('sb-key').value}` },
+  }).catch(() => {});
+  refresh(true);
+}
+
+// ---- reformat: open existing in manage modal ----
+async function openReformatManage(parentId, reformatId, aspect) {
+  // Fetch the reformat so we have output_path + status
+  const { data: reformat, error } = await sb
+    .from('variants').select('*').eq('id', reformatId).single();
+  if (error || !reformat) { alert('couldn\'t load reformat'); return; }
+
+  // Get a signed URL for the lightbox
+  if (reformat.status !== 'completed' || !reformat.output_path) {
+    alert(`Reformat is ${reformat.status}.`);
+    return;
+  }
+  const { data: signed } = await sb.storage.from('ad-outputs')
+    .createSignedUrl(reformat.output_path, 3600);
+  const url = signed?.signedUrl;
+  if (!url) { alert('could not load image'); return; }
+
+  // Show in our existing lightbox + also show action toolbar overlay.
+  // Simpler: build a small modal alongside existing lightbox.
+  const existing = document.getElementById('reformat-modal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'reformat-modal';
+  modal.className = 'modal-bg open';
+  modal.innerHTML = `
+    <div class="modal" style="width:min(720px, 92vw); padding:0;">
+      <div style="padding:12px 16px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px;">
+        <div style="font-size:11px; color:var(--ink-low); font-family:var(--mono); letter-spacing:.06em;">REFORMAT · ${aspect} · #${reformat.seq ?? '—'}</div>
+        <span style="flex:1"></span>
+        <button class="btn ghost small" id="rm-close">Close</button>
+      </div>
+      <div style="padding:14px;">
+        <img src="${url}" style="max-width:100%; max-height:60vh; display:block; margin:0 auto; border-radius:4px; cursor:zoom-in;" id="rm-img">
+        <div style="display:flex; gap:8px; margin-top:14px;">
+          <button class="btn small" id="rm-download">Download</button>
+          <button class="btn ghost small" id="rm-regen">Regenerate</button>
+          <button class="btn ghost small" id="rm-edit">Edit this version</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  document.getElementById('rm-close').onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  document.getElementById('rm-img').onclick = () => openLightbox(url);
+  document.getElementById('rm-download').onclick = () => download(reformat.output_path);
+  document.getElementById('rm-regen').onclick = async () => {
+    if (!confirm(`Regenerate the ${aspect} reformat? This creates a new one and replaces the current one in the UI.`)) return;
+    modal.remove();
+    // Just create another reformat — newest becomes the active one
+    directReformat(parentId, aspect);
+  };
+  document.getElementById('rm-edit').onclick = () => {
+    modal.remove();
+    openDerive(reformat.id, 'edit');
+  };
+}
+
+// ---- parent peek (clicking "from #X" on a derived card) ----
+async function openParentPeek(parentSeq, parentId) {
+  const { data: parent, error } = await sb
+    .from('variants').select('*, jobs(prompt)').eq('id', parentId).single();
+  if (error || !parent) { alert('parent not found'); return; }
+  const url = parent.output_path
+    ? (await sb.storage.from('ad-outputs').createSignedUrl(parent.output_path, 3600)).data?.signedUrl
+    : null;
+
+  $('parent-info').textContent = `#${parent.seq} · ${parent.aspect} · ${parent.quality}`;
+  $('parent-body').innerHTML = `
+    ${url ? `<img src="${url}" style="max-width:100%; max-height:50vh; display:block; margin:0 auto 12px; border-radius:4px; cursor:zoom-in;" id="pp-img">` : ''}
+    <div style="font-size:12px; color:var(--ink-dim); white-space:pre-wrap; max-height:200px; overflow:auto;">${escape(parent.jobs?.prompt || '')}</div>
+    <div style="display:flex; gap:8px; margin-top:14px;">
+      <button class="btn ghost small" id="pp-find">Show only this variant</button>
+      ${url ? `<button class="btn ghost small" id="pp-download">Download</button>` : ''}
+    </div>`;
+  if (url) {
+    document.getElementById('pp-img').onclick = () => openLightbox(url);
+    document.getElementById('pp-download').onclick = () => download(parent.output_path);
+  }
+  document.getElementById('pp-find').onclick = () => {
+    $('parent-modal').classList.remove('open');
+    switchTab({ kind: 'find', seq: parentSeq });
+  };
+  $('parent-modal').classList.add('open');
+}
+$('parent-close').onclick = () => $('parent-modal').classList.remove('open');
+$('parent-modal').onclick = (e) => { if (e.target.id === 'parent-modal') $('parent-modal').classList.remove('open'); };
 
 // ---- lightbox ----
 function openLightbox(src) {
