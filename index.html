@@ -521,11 +521,7 @@ $('save-conn').onclick = () => {
   localStorage.setItem('sb-key', $('sb-key').value);
   initClient();
 };
-loadConn();
-loadRefImagesFromStorage();
-// Render after the DOM is ready and after loadRefImagesFromStorage has populated state.
-// But renderRefImages references publicInputUrl which uses sb — render after init.
-setTimeout(() => renderRefImages(), 0);
+// (init moved to bottom of script — see end)
 
 // ---- transcode any user image into a clean RGB PNG ≤2048px on the long edge.
 // Uses the browser's Canvas API which handles every format the browser handles
@@ -1680,6 +1676,13 @@ setInterval(() => {
   const inFlight = allVariants.some(v => v.status === 'pending' || v.status === 'processing');
   if (inFlight) refresh(false);
 }, 15000);
+
+// ---- INIT (must be at the very end, after all `let` declarations and all
+// function definitions, so nothing is referenced before it's declared) ----
+loadRefImagesFromStorage();
+loadConn();
+// loadConn → initClient → refresh; if no creds yet, just render the empty form
+renderRefImages();
 </script>
 </body>
 </html>
