@@ -114,6 +114,37 @@
   .ad.square .thumb .badge.aspect { right:42px; }       /* leave room for star */
   .ad .thumb .badge.aspect { right:42px; }              /* leave room for star */
 
+  /* reference images list */
+  .ref-images { display:flex; flex-direction:column; gap:6px; }
+  .ref-img-row {
+    display:flex; align-items:center; gap:8px; padding:6px;
+    background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius);
+  }
+  .ref-img-row .preview {
+    width:48px; height:48px; flex-shrink:0; object-fit:cover; border-radius:4px;
+    background:var(--bg);
+  }
+  .ref-img-row .meta { flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
+  .ref-img-row .name {
+    font-size:11px; color:var(--ink-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .ref-img-row .role-input { display:flex; gap:4px; }
+  .ref-img-row .role-input select, .ref-img-row .role-input input {
+    font-size:11px; padding:3px 6px; flex:1; min-width:0;
+  }
+  .ref-img-row .role-input input { display:none; }
+  .ref-img-row .role-input.custom select { display:none; }
+  .ref-img-row .role-input.custom input { display:block; }
+  .ref-img-row .controls { display:flex; flex-direction:column; gap:2px; }
+  .ref-img-row .controls button {
+    background:transparent; border:0; color:var(--ink-low); cursor:pointer;
+    padding:0 4px; font-size:14px; line-height:1;
+  }
+  .ref-img-row .controls button:hover { color:var(--ink); }
+  .ref-img-row .controls .x:hover { color:var(--danger); }
+  .ref-img-row.sticky { border-color:var(--accent); border-style:dashed; }
+  .ref-img-row.sticky .name::before { content:"saved · "; color:var(--accent); }
+
   /* tabs */
   .tabs { display:flex; gap:4px; flex-wrap:wrap; align-items:center; padding:3px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); max-width:70%; }
   .tab { background:transparent; color:var(--ink-dim); border:0; padding:5px 12px; border-radius:4px; font-size:12px; font-weight:500; cursor:pointer; display:inline-flex; align-items:center; gap:5px; position:relative; }
@@ -255,8 +286,13 @@
       <label>Prompt</label>
       <textarea id="prompt" placeholder="High-contrast static ad for a coffee subscription. Bold serif headline 'Wake the hell up.' Steaming espresso shot, dark wood backdrop. Logo bottom-center."></textarea>
 
-      <label style="margin-top:10px">Reference image (optional)</label>
-      <input type="file" id="ref-file" accept="image/*">
+      <label style="margin-top:10px">Reference images (optional)</label>
+      <div id="ref-images" class="ref-images"><!-- populated by JS --></div>
+      <input type="file" id="ref-add-input" accept="image/*" style="display:none">
+      <div style="display:flex; gap:6px; margin-top:6px;">
+        <button type="button" class="btn ghost small" id="ref-add-btn">+ Add image</button>
+        <button type="button" class="btn ghost small" id="ref-clear-btn" style="display:none">Clear all</button>
+      </div>
 
       <label style="margin-top:10px">Aspect ratios</label>
       <div style="display:flex; gap:14px; padding:6px 0; flex-wrap:wrap;">
@@ -370,6 +406,20 @@
 </div>
 
 <!-- "from #X" parent peek modal -->
+<!-- prompt preview modal (shown when submitting with multi-image jobs) -->
+<div class="modal-bg" id="preview-modal">
+  <div class="modal" style="width:min(640px, 92vw);">
+    <h3 style="margin:0 0 4px;">Review composed prompt</h3>
+    <p class="hint" style="margin-top:0">Auto-prepended image roles. Edit if needed, then submit.</p>
+    <textarea id="preview-prompt" style="min-height:280px; width:100%; font-family:var(--mono); font-size:12px;"></textarea>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost" id="preview-cancel">Cancel</button>
+      <button class="btn" id="preview-submit">Submit job</button>
+    </div>
+    <div class="err" id="preview-err"></div>
+  </div>
+</div>
+
 <div class="modal-bg" id="parent-modal">
   <div class="modal" style="width:min(640px,92vw); padding:0;">
     <div style="padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between;">
@@ -472,6 +522,10 @@ $('save-conn').onclick = () => {
   initClient();
 };
 loadConn();
+loadRefImagesFromStorage();
+// Render after the DOM is ready and after loadRefImagesFromStorage has populated state.
+// But renderRefImages references publicInputUrl which uses sb — render after init.
+setTimeout(() => renderRefImages(), 0);
 
 // ---- transcode any user image into a clean RGB PNG ≤2048px on the long edge.
 // Uses the browser's Canvas API which handles every format the browser handles
@@ -509,54 +563,277 @@ async function transcodeForUpload(file) {
   return new File([blob], `transcoded-${Date.now()}.png`, { type: 'image/png' });
 }
 
+// ---- ref-images manager (sticky, multi-image with roles) ----
+//
+// State: an array of { kind:'fresh', file, role } | { kind:'sticky', path, name, role }
+// Persists to localStorage so it survives page reloads.
+const REF_KEY = 'ref-images-state-v1';
+const ROLE_PRESETS = ['reference', 'before', 'after', 'left', 'right', 'product_a', 'product_b', 'logo', 'background', 'custom'];
+
+let refImages = [];
+
+function loadRefImagesFromStorage() {
+  try {
+    const raw = localStorage.getItem(REF_KEY);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    // Only sticky entries can survive — fresh File objects can't be serialized.
+    refImages = (arr ?? []).filter(r => r && r.kind === 'sticky' && r.path);
+  } catch { refImages = []; }
+}
+function saveRefImagesToStorage() {
+  // Only persist sticky entries (fresh File objects can't be stored).
+  const stickyOnly = refImages.filter(r => r.kind === 'sticky');
+  localStorage.setItem(REF_KEY, JSON.stringify(stickyOnly));
+}
+
+function renderRefImages() {
+  const wrap = $('ref-images');
+  if (!refImages.length) {
+    wrap.innerHTML = '';
+    $('ref-clear-btn').style.display = 'none';
+    return;
+  }
+  $('ref-clear-btn').style.display = '';
+
+  wrap.innerHTML = refImages.map((r, i) => {
+    const previewSrc = r.kind === 'fresh'
+      ? URL.createObjectURL(r.file)
+      : (r.path ? publicInputUrl(r.path) : '');
+    const name = r.kind === 'fresh' ? r.file.name : (r.name || r.path?.split('-').slice(1).join('-') || 'image');
+    const isCustom = r.role && !ROLE_PRESETS.slice(0, -1).includes(r.role);
+    const selectVal = isCustom ? 'custom' : (r.role || 'reference');
+    const customVal = isCustom ? r.role : '';
+    return `
+      <div class="ref-img-row ${r.kind === 'sticky' ? 'sticky' : ''}" data-idx="${i}">
+        <img class="preview" src="${previewSrc}" alt="">
+        <div class="meta">
+          <div class="name" title="${escape(name)}">${escape(name)}</div>
+          <div class="role-input ${isCustom ? 'custom' : ''}">
+            <select data-role-select="${i}">
+              ${ROLE_PRESETS.map(p => `<option value="${p}" ${selectVal === p ? 'selected' : ''}>${p === 'custom' ? '(custom…)' : p}</option>`).join('')}
+            </select>
+            <input type="text" data-role-custom="${i}" placeholder="role…" value="${escape(customVal)}" maxlength="30">
+          </div>
+        </div>
+        <div class="controls">
+          <button data-up="${i}" ${i === 0 ? 'disabled style="opacity:0.3"' : ''} title="Move up">▲</button>
+          <button data-down="${i}" ${i === refImages.length - 1 ? 'disabled style="opacity:0.3"' : ''} title="Move down">▼</button>
+          <button class="x" data-remove="${i}" title="Remove">×</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Wire actions
+  wrap.querySelectorAll('[data-role-select]').forEach(el => {
+    el.onchange = () => {
+      const i = +el.dataset.roleSelect;
+      if (el.value === 'custom') {
+        // Switch to custom input
+        refImages[i].role = '';
+      } else {
+        refImages[i].role = el.value;
+      }
+      saveRefImagesToStorage();
+      renderRefImages();
+    };
+  });
+  wrap.querySelectorAll('[data-role-custom]').forEach(el => {
+    el.oninput = () => {
+      const i = +el.dataset.roleCustom;
+      refImages[i].role = el.value.trim() || 'custom';
+      saveRefImagesToStorage();
+    };
+  });
+  wrap.querySelectorAll('[data-remove]').forEach(b => {
+    b.onclick = () => {
+      const i = +b.dataset.remove;
+      refImages.splice(i, 1);
+      saveRefImagesToStorage();
+      renderRefImages();
+    };
+  });
+  wrap.querySelectorAll('[data-up]').forEach(b => {
+    b.onclick = () => {
+      const i = +b.dataset.up;
+      if (i > 0) {
+        [refImages[i-1], refImages[i]] = [refImages[i], refImages[i-1]];
+        saveRefImagesToStorage();
+        renderRefImages();
+      }
+    };
+  });
+  wrap.querySelectorAll('[data-down]').forEach(b => {
+    b.onclick = () => {
+      const i = +b.dataset.down;
+      if (i < refImages.length - 1) {
+        [refImages[i+1], refImages[i]] = [refImages[i], refImages[i+1]];
+        saveRefImagesToStorage();
+        renderRefImages();
+      }
+    };
+  });
+}
+
+function publicInputUrl(path) {
+  // Sticky preview thumbs from ad-inputs bucket. Same async-swap pattern as outputs.
+  const cacheKey = `signed-input:${path}`;
+  const cached = readSignedCache(cacheKey);
+  if (cached) return cached;
+  sb.storage.from('ad-inputs').createSignedUrl(path, SIGN_TTL_SECONDS).then(({data}) => {
+    if (data?.signedUrl) {
+      writeSignedCache(cacheKey, data.signedUrl);
+      document.querySelectorAll('.ref-img-row .preview').forEach(img => {
+        if (img.getAttribute('src') === path) img.src = data.signedUrl;
+      });
+    }
+  });
+  return path;
+}
+
+$('ref-add-btn').onclick = () => $('ref-add-input').click();
+$('ref-add-input').onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  refImages.push({ kind: 'fresh', file, role: refImages.length === 0 ? 'reference' : '' });
+  e.target.value = '';
+  saveRefImagesToStorage();
+  renderRefImages();
+};
+$('ref-clear-btn').onclick = () => {
+  if (!confirm('Remove all reference images?')) return;
+  refImages = [];
+  saveRefImagesToStorage();
+  renderRefImages();
+};
+
+// Compose the auto-prepended prompt for multi-image jobs.
+// Returns the user prompt unchanged for 0 or 1 image jobs.
+function composePromptWithRoles(userPrompt) {
+  if (refImages.length < 2) return userPrompt;
+  const lines = refImages.map((r, i) => {
+    const role = (r.role || 'reference').toUpperCase();
+    return `Image ${i+1}: ${role}`;
+  });
+  return `You are given ${refImages.length} reference images:\n${lines.join('\n')}\n\nUse them as instructed below.\n\n${userPrompt}`;
+}
+
 // ---- submit single ----
+async function uploadFreshImage(file, btn) {
+  btn.textContent = 'Transcoding…';
+  const transcoded = await transcodeForUpload(file);
+  btn.textContent = 'Uploading…';
+  const path = `${crypto.randomUUID()}-${transcoded.name}`;
+  const up = await sb.storage.from('ad-inputs').upload(path, transcoded, { contentType: 'image/png' });
+  if (up.error) throw new Error(up.error.message);
+  return path;
+}
+
+async function actuallySubmit(finalPromptText, btn) {
+  // Resolve all reference image paths (uploading any fresh files first).
+  // Convert refImages → array of {path, role}, and update refImages so freshly
+  // uploaded ones become sticky for next submit.
+  const roleMap = []; // [{path, role}]
+  for (let i = 0; i < refImages.length; i++) {
+    const r = refImages[i];
+    if (r.kind === 'fresh') {
+      const path = await uploadFreshImage(r.file, btn);
+      roleMap.push({ path, role: r.role || 'reference' });
+      // Promote to sticky for next time
+      refImages[i] = { kind: 'sticky', path, name: r.file.name, role: r.role || 'reference' };
+    } else {
+      roleMap.push({ path: r.path, role: r.role || 'reference' });
+    }
+  }
+  saveRefImagesToStorage();
+  renderRefImages();
+
+  const aspects = [];
+  if ($('asp-9-16').checked) aspects.push('9:16');
+  if ($('asp-1-1').checked)  aspects.push('1:1');
+  if ($('asp-16-9').checked) aspects.push('16:9');
+  if (!aspects.length) throw new Error('pick at least one aspect ratio');
+
+  btn.textContent = 'Submitting…';
+
+  // Insert the job. Use legacy reference_image_path if exactly 1 image (backwards
+  // compatible) — otherwise leave it null and use job_images for everything.
+  const legacyPath = roleMap.length === 1 ? roleMap[0].path : null;
+  const { data, error } = await sb.from('jobs').insert({
+    prompt: finalPromptText,
+    reference_image_path: legacyPath,
+    quality: $('quality').value,
+    aspects,
+    variations: parseInt($('variations').value, 10),
+    safe_zones: $('safe-zones').checked,
+  }).select('id').single();
+  if (error) throw new Error(error.message);
+
+  // Insert all images into job_images (always — even for the 1-image case
+  // since the worker prefers job_images when present)
+  if (roleMap.length > 0) {
+    const rows = roleMap.map((r, i) => ({
+      job_id: data.id,
+      role: r.role,
+      image_path: r.path,
+      sort_order: i,
+    }));
+    const { error: jiErr } = await sb.from('job_images').insert(rows);
+    if (jiErr) throw new Error('job_images: ' + jiErr.message);
+  }
+
+  fetch(`${$('sb-url').value}/functions/v1/process-job`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${$('sb-key').value}` },
+  }).catch(() => {});
+
+  // Clear the prompt textarea but keep ref images (sticky).
+  $('prompt').value = '';
+  refresh();
+}
+
 $('submit-one').onclick = async () => {
   $('submit-err').textContent = '';
   if (!sb) { $('submit-err').textContent = 'connect first'; return; }
-  const prompt = $('prompt').value.trim();
-  if (!prompt) { $('submit-err').textContent = 'prompt required'; return; }
+  const userPrompt = $('prompt').value.trim();
+  if (!userPrompt) { $('submit-err').textContent = 'prompt required'; return; }
 
-  const btn = $('submit-one'); btn.disabled = true; btn.textContent = 'Uploading…';
+  const btn = $('submit-one');
+  btn.disabled = true;
+  btn.textContent = 'Working…';
+
   try {
-    let refPath = null;
-    const refFile = $('ref-file').files[0];
-    if (refFile) {
-      btn.textContent = 'Transcoding…';
-      const transcoded = await transcodeForUpload(refFile);
-      btn.textContent = 'Uploading…';
-      const path = `${crypto.randomUUID()}-${transcoded.name}`;
-      const up = await sb.storage.from('ad-inputs').upload(path, transcoded, { contentType: 'image/png' });
-      if (up.error) throw new Error(up.error.message);
-      refPath = path;
+    if (refImages.length >= 2) {
+      // Multi-image: show preview modal first
+      btn.disabled = false; btn.textContent = 'Submit job';
+      $('preview-prompt').value = composePromptWithRoles(userPrompt);
+      $('preview-err').textContent = '';
+      $('preview-modal').classList.add('open');
+    } else {
+      // 0 or 1 images: submit directly with no prompt modification
+      await actuallySubmit(userPrompt, btn);
     }
-
-    const aspects = [];
-    if ($('asp-9-16').checked) aspects.push('9:16');
-    if ($('asp-1-1').checked)  aspects.push('1:1');
-    if ($('asp-16-9').checked) aspects.push('16:9');
-    if (!aspects.length) throw new Error('pick at least one aspect ratio');
-
-    btn.textContent = 'Submitting…';
-    const { data, error } = await sb.from('jobs').insert({
-      prompt,
-      reference_image_path: refPath,
-      quality: $('quality').value,
-      aspects,
-      variations: parseInt($('variations').value, 10),
-      safe_zones: $('safe-zones').checked,
-    }).select('id');
-    if (error) throw new Error(error.message);
-
-    // fire kick (best-effort)
-    fetch(`${$('sb-url').value}/functions/v1/process-job`, {
-      method:'POST',
-      headers: { Authorization: `Bearer ${$('sb-key').value}` },
-    }).catch(()=>{});
-
-    $('prompt').value = ''; $('ref-file').value = '';
-    refresh();
   } catch (e) {
     $('submit-err').textContent = e.message;
+  } finally {
+    if (!$('preview-modal').classList.contains('open')) {
+      btn.disabled = false; btn.textContent = 'Submit job';
+    }
+  }
+};
+
+// ---- preview modal handlers ----
+$('preview-cancel').onclick = () => $('preview-modal').classList.remove('open');
+$('preview-submit').onclick = async () => {
+  const finalText = $('preview-prompt').value.trim();
+  if (!finalText) { $('preview-err').textContent = 'prompt empty'; return; }
+  const btn = $('preview-submit');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  try {
+    await actuallySubmit(finalText, btn);
+    $('preview-modal').classList.remove('open');
+  } catch (e) {
+    $('preview-err').textContent = e.message;
   } finally {
     btn.disabled = false; btn.textContent = 'Submit job';
   }
