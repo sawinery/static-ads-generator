@@ -286,6 +286,14 @@
       <label>Prompt</label>
       <textarea id="prompt" placeholder="High-contrast static ad for a coffee subscription. Bold serif headline 'Wake the hell up.' Steaming espresso shot, dark wood backdrop. Logo bottom-center."></textarea>
 
+      <details id="addon-details" style="margin-top:10px;">
+        <summary style="cursor:pointer; user-select:none; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-dim); padding:4px 0;">
+          Prompt add-on <span id="addon-badge" style="display:none; background:var(--accent); color:#0e0f12; font-weight:700; padding:1px 6px; border-radius:3px; margin-left:6px; font-size:10px; letter-spacing:.04em;">ACTIVE</span>
+        </summary>
+        <textarea id="addon" placeholder="Persistent text appended to every prompt. E.g. style guide, brand voice, recurring constraints. Stored in your browser, applies to every job until you change it." style="min-height:120px; margin-top:6px;"></textarea>
+        <div class="hint">Appended after your main prompt at submit time. Saved to this device.</div>
+      </details>
+
       <label style="margin-top:10px">Reference images (optional)</label>
       <div id="ref-images" class="ref-images"><!-- populated by JS --></div>
       <input type="file" id="ref-add-input" accept="image/*" style="display:none">
@@ -791,8 +799,12 @@ async function actuallySubmit(finalPromptText, btn) {
 $('submit-one').onclick = async () => {
   $('submit-err').textContent = '';
   if (!sb) { $('submit-err').textContent = 'connect first'; return; }
-  const userPrompt = $('prompt').value.trim();
-  if (!userPrompt) { $('submit-err').textContent = 'prompt required'; return; }
+  const rawPrompt = $('prompt').value.trim();
+  if (!rawPrompt) { $('submit-err').textContent = 'prompt required'; return; }
+
+  // Append the persistent "Prompt add-on" if the user has set one.
+  const addon = ($('addon').value || '').trim();
+  const userPrompt = addon ? `${rawPrompt}\n\n${addon}` : rawPrompt;
 
   const btn = $('submit-one');
   btn.disabled = true;
@@ -806,7 +818,7 @@ $('submit-one').onclick = async () => {
       $('preview-err').textContent = '';
       $('preview-modal').classList.add('open');
     } else {
-      // 0 or 1 images: submit directly with no prompt modification
+      // 0 or 1 images: submit directly
       await actuallySubmit(userPrompt, btn);
     }
   } catch (e) {
@@ -847,8 +859,9 @@ $('submit-batch').onclick = async () => {
   if ($('batch-asp-16-9').checked) aspects.push('16:9');
   if (!aspects.length) { alert('pick at least one aspect ratio'); return; }
 
+  const addon = ($('addon').value || '').trim();
   const rows = lines.map(p => ({
-    prompt: p,
+    prompt: addon ? `${p}\n\n${addon}` : p,
     quality: $('batch-quality').value,
     aspects,
     variations: parseInt($('batch-variations').value, 10),
@@ -919,7 +932,7 @@ async function refresh(userInitiated = false) {
     }
     const { data: variants, error } = await sb
       .from('variants')
-      .select('*, jobs(prompt, total_cost_usd)')
+      .select('*, jobs(prompt, total_cost_usd, variations)')
       .in('id', slice);
     if (error) { console.error(error); return; }
     // Preserve the order from links (most recently added first)
@@ -929,7 +942,7 @@ async function refresh(userInitiated = false) {
     // "find this variant" mode — show only the matching seq
     const { data: variants, error } = await sb
       .from('variants')
-      .select('*, jobs(prompt, total_cost_usd)')
+      .select('*, jobs(prompt, total_cost_usd, variations)')
       .eq('seq', currentTab.seq);
     if (error) { console.error(error); return; }
     allVariants = variants ?? [];
@@ -937,7 +950,7 @@ async function refresh(userInitiated = false) {
     // 'all'
     const { data: variants, error } = await sb
       .from('variants')
-      .select('*, jobs(prompt, total_cost_usd)')
+      .select('*, jobs(prompt, total_cost_usd, variations)')
       .order('created_at', { ascending: false })
       .range(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE - 1);
     if (error) { console.error(error); return; }
@@ -1014,6 +1027,8 @@ async function refresh(userInitiated = false) {
       if (reformatsByParent[v.id]) {
         v.reformats = reformatsByParent[v.id];
       }
+      // Flat shorthand for the filename builder (avoids deep prop access)
+      v.jobs_variations = v.jobs?.variations ?? 1;
       return v;
     });
   }
@@ -1129,7 +1144,13 @@ function render() {
 
   // wire actions
   wrap.querySelectorAll('[data-act="download"]').forEach(b => {
-    b.onclick = (e) => { e.stopPropagation(); download(b.dataset.path); };
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const id = b.dataset.id;
+      const v = allVariants.find(x => x.id === id);
+      if (!v) return;
+      downloadAll(v);
+    };
   });
   wrap.querySelectorAll('[data-act="edit"]').forEach(b => {
     b.onclick = (e) => { e.stopPropagation(); openDerive(b.dataset.id, 'edit'); };
@@ -1287,12 +1308,23 @@ function renderAd(v) {
         </div>
       </div>
       <div class="actions">
-        ${v.status === 'completed' ? `
-          <button class="btn small" data-act="download" data-path="${v.output_path}" title="Download PNG">Download</button>
-          <button class="btn ghost small" data-act="edit" data-id="${v.id}" title="Modify with a freeform prompt">Edit</button>
-          ${reformatBtns}
-          <button class="btn ghost small" data-act="reuse" data-id="${v.id}" title="Use this image as reference for a brand-new ad">Reuse</button>
-        ` : `<button class="btn ghost small" disabled>Waiting…</button>`}
+        ${v.status === 'completed' ? (() => {
+          // Count how many completed aspects we'll download (parent + reformats)
+          const reformatCount = v.reformats
+            ? Object.values(v.reformats).filter(r => r.status === 'completed').length
+            : 0;
+          const dlCount = 1 + reformatCount;
+          const dlLabel = dlCount > 1 ? `Download (${dlCount})` : 'Download';
+          const dlTitle = dlCount > 1
+            ? `Download all ${dlCount} aspects of this ad as PNGs`
+            : 'Download PNG';
+          return `
+            <button class="btn small" data-act="download" data-id="${v.id}" title="${dlTitle}">${dlLabel}</button>
+            <button class="btn ghost small" data-act="edit" data-id="${v.id}" title="Modify with a freeform prompt">Edit</button>
+            ${reformatBtns}
+            <button class="btn ghost small" data-act="reuse" data-id="${v.id}" title="Use this image as reference for a brand-new ad">Reuse</button>
+          `;
+        })() : `<button class="btn ghost small" disabled>Waiting…</button>`}
       </div>
     </div>`;
 }
@@ -1339,13 +1371,82 @@ function publicUrl(path) {
   return path;
 }
 
-async function download(path) {
+// ---- filename helpers ----
+function aspectSlug(aspect) {
+  // '9:16' → '9x16', '1:1' → '1x1', '16:9' → '16x9' (`:` invalid on some FS)
+  return (aspect || '').replace(':', 'x');
+}
+
+function extractHeadline(promptText) {
+  // Prefer an explicit Headline:"..."  / Headline: ... line
+  const m = (promptText || '').match(/headline\s*[:=]\s*['"“”]?([^'"“”\n]{1,80})['"“”]?/i);
+  if (m && m[1]) return m[1].trim();
+  // Fallback: first ~6 words of the prompt
+  const firstLine = (promptText || '').split('\n').find(l => l.trim().length > 0) || '';
+  return firstLine.split(/\s+/).slice(0, 6).join(' ').trim();
+}
+
+function slugify(s) {
+  return (s || '')
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')   // strip punctuation, keep word chars/spaces/hyphens
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 50) || 'ad';
+}
+
+function buildFilename(variant) {
+  // variant has: aspect, variation_index, jobs.prompt (or edit_prompt), and
+  // optionally jobs.variations to know if a -v# suffix is needed.
+  const base = slugify(extractHeadline(variant.edit_prompt || variant.jobs?.prompt || ''));
+  const aspect = aspectSlug(variant.aspect);
+  const totalVars = variant.jobs_variations ?? 1;
+  const vSuffix = (totalVars > 1 && variant.variation_index)
+    ? `-v${variant.variation_index}`
+    : '';
+  return `${base}-${aspect}${vSuffix}.png`;
+}
+
+// Single-file download: takes a variant (or just a path for legacy callers).
+async function download(variantOrPath) {
+  // Support both old call signature download(path) and new download(variant).
+  const isVariant = typeof variantOrPath === 'object' && variantOrPath !== null;
+  const path = isVariant ? variantOrPath.output_path : variantOrPath;
+  const filename = isVariant ? buildFilename(variantOrPath) : path.split('/').pop();
+
   const { data, error } = await sb.storage.from('ad-outputs').download(path);
   if (error) { alert(error.message); return; }
   const url = URL.createObjectURL(data);
   const a = document.createElement('a');
-  a.href = url; a.download = path.split('/').pop(); a.click();
+  a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
+}
+
+// Download all aspects of a variant (the variant itself + any attached
+// reformats stored on v.reformats). Browsers throttle multi-downloads, so
+// we stagger them with a small delay.
+async function downloadAll(v) {
+  // 1. The variant itself
+  await download(v);
+
+  // 2. Each attached reformat
+  if (v.reformats) {
+    for (const aspect of Object.keys(v.reformats)) {
+      const r = v.reformats[aspect];
+      if (r && r.status === 'completed' && r.output_path) {
+        // Build a synthetic variant-like object for the reformat using the
+        // same headline as the parent. The reformat's aspect is its own.
+        const synthetic = {
+          ...r,
+          jobs: v.jobs,                   // share parent's prompt for naming
+          jobs_variations: v.jobs_variations,
+        };
+        await new Promise(r => setTimeout(r, 250));
+        await download(synthetic);
+      }
+    }
+  }
 }
 
 // ---- favorite toggle ----
@@ -1505,7 +1606,15 @@ async function openReformatManage(parentId, reformatId, aspect) {
   document.getElementById('rm-close').onclick = () => modal.remove();
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
   document.getElementById('rm-img').onclick = () => openLightbox(url);
-  document.getElementById('rm-download').onclick = () => download(reformat.output_path);
+  document.getElementById('rm-download').onclick = () => {
+    // Build a synthetic variant so download() picks up the parent's prompt for naming.
+    const parent = allVariants.find(x => x.id === parentId);
+    download({
+      ...reformat,
+      jobs: parent?.jobs,
+      jobs_variations: parent?.jobs_variations ?? 1,
+    });
+  };
   document.getElementById('rm-regen').onclick = async () => {
     if (!confirm(`Regenerate the ${aspect} reformat? This creates a new one and replaces the current one in the UI.`)) return;
     modal.remove();
@@ -1537,7 +1646,10 @@ async function openParentPeek(parentSeq, parentId) {
     </div>`;
   if (url) {
     document.getElementById('pp-img').onclick = () => openLightbox(url);
-    document.getElementById('pp-download').onclick = () => download(parent.output_path);
+    document.getElementById('pp-download').onclick = () => download({
+      ...parent,
+      jobs_variations: parent.jobs?.variations ?? 1,
+    });
   }
   document.getElementById('pp-find').onclick = () => {
     $('parent-modal').classList.remove('open');
@@ -1677,9 +1789,27 @@ setInterval(() => {
   if (inFlight) refresh(false);
 }, 15000);
 
+// ---- prompt add-on (persistent, applies to every submit) ----
+const ADDON_KEY = 'prompt-addon-v1';
+function loadAddon() {
+  const v = localStorage.getItem(ADDON_KEY) || '';
+  $('addon').value = v;
+  updateAddonBadge();
+  if (v) $('addon-details').open = true;  // auto-expand if there's content
+}
+function updateAddonBadge() {
+  const has = ($('addon').value || '').trim().length > 0;
+  $('addon-badge').style.display = has ? 'inline-block' : 'none';
+}
+$('addon').addEventListener('input', () => {
+  localStorage.setItem(ADDON_KEY, $('addon').value);
+  updateAddonBadge();
+});
+
 // ---- INIT (must be at the very end, after all `let` declarations and all
 // function definitions, so nothing is referenced before it's declared) ----
 loadRefImagesFromStorage();
+loadAddon();
 loadConn();
 // loadConn → initClient → refresh; if no creds yet, just render the empty form
 renderRefImages();
