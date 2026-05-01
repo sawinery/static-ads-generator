@@ -1,12 +1,13 @@
-// Walks the /library/ folder of the repo, uploads each image to the
-// 'ad-inputs' Supabase bucket (skipping ones already there), and inserts
-// rows into public.library_images so they appear in the app.
+// Walks /library/ recursively (one level of subfolders), uploads each image to
+// the 'ad-inputs' Supabase bucket, and inserts/updates a row in
+// public.library_images. Subfolder name becomes the row's `folder` value.
 //
-// Idempotent: re-running won't duplicate. Filename is used as the storage
-// key, so editing/replacing a file in the repo updates the same storage
-// object (upsert).
+// Examples:
+//   library/before-coffee.jpg          → folder = NULL (top-level)
+//   library/coffee/bag-front.jpg       → folder = "coffee"
+//   library/garage-flooring/chip.jpg   → folder = "garage-flooring"
 //
-// Label = the filename without extension, transformed: 'before-coffee.jpg' → 'before coffee'.
+// Idempotent: re-running won't duplicate. Filename + folder is the unique key.
 
 import { createClient } from '@supabase/supabase-js';
 import fs from 'node:fs';
@@ -39,9 +40,37 @@ function mimeFromExt(filename) {
 
 function labelFromFilename(filename) {
   return filename
-    .replace(/\.[^.]+$/, '')   // drop extension
-    .replace(/[-_]+/g, ' ')    // hyphens/underscores → spaces
+    .replace(/\.[^.]+$/, '')
+    .replace(/[-_]+/g, ' ')
     .trim();
+}
+
+// Walk one level deep: top-level files + files in immediate subfolders.
+function listImages() {
+  const out = [];
+  if (!fs.existsSync(LIBRARY_DIR)) return out;
+
+  const entries = fs.readdirSync(LIBRARY_DIR, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(LIBRARY_DIR, entry.name);
+    if (entry.isFile() && ALLOWED.test(entry.name)) {
+      out.push({ filename: entry.name, folder: null, fullPath });
+    } else if (entry.isDirectory()) {
+      // One level of subfolders
+      const subEntries = fs.readdirSync(fullPath, { withFileTypes: true });
+      for (const sub of subEntries) {
+        if (sub.isFile() && ALLOWED.test(sub.name)) {
+          out.push({
+            filename: sub.name,
+            folder: entry.name,    // top-level subfolder name only
+            fullPath: path.join(fullPath, sub.name),
+          });
+        }
+        // Deeper nesting is ignored — keep it flat for clarity
+      }
+    }
+  }
+  return out;
 }
 
 async function main() {
@@ -50,22 +79,25 @@ async function main() {
     return;
   }
 
-  const files = fs.readdirSync(LIBRARY_DIR)
-    .filter(f => ALLOWED.test(f) && fs.statSync(path.join(LIBRARY_DIR, f)).isFile());
-
-  if (files.length === 0) {
+  const items = listImages();
+  if (items.length === 0) {
     console.log(`${LIBRARY_DIR}/ is empty.`);
     return;
   }
 
-  console.log(`Found ${files.length} image(s) in ${LIBRARY_DIR}/`);
+  console.log(`Found ${items.length} image(s) in ${LIBRARY_DIR}/`);
 
-  for (const filename of files) {
-    const filepath = path.join(LIBRARY_DIR, filename);
-    // Use a stable storage key so re-uploads overwrite the same object.
-    const storageKey = `library/${filename}`;
-    const bytes = fs.readFileSync(filepath);
+  for (const item of items) {
+    const { filename, folder, fullPath } = item;
+    // Storage key includes folder so files with the same name in different
+    // folders don't collide.
+    const storageKey = folder
+      ? `library/${folder}/${filename}`
+      : `library/${filename}`;
+    const bytes = fs.readFileSync(fullPath);
     const mime = mimeFromExt(filename);
+    const label = labelFromFilename(filename);
+    const folderLabel = folder ? `[${folder}] ` : '';
 
     // Upload (upsert)
     const upRes = await sb.storage.from(BUCKET).upload(storageKey, bytes, {
@@ -73,12 +105,11 @@ async function main() {
       upsert: true,
     });
     if (upRes.error) {
-      console.error(`  ✗ ${filename}: upload failed — ${upRes.error.message}`);
+      console.error(`  ✗ ${folderLabel}${filename}: upload failed — ${upRes.error.message}`);
       continue;
     }
 
-    // Insert library row if not already present (image_path is unique)
-    const label = labelFromFilename(filename);
+    // Insert or update library row (image_path is unique)
     const { data: existing } = await sb
       .from('library_images')
       .select('id')
@@ -86,18 +117,20 @@ async function main() {
       .maybeSingle();
 
     if (existing) {
-      // Update label in case the filename was renamed in the repo
-      await sb.from('library_images').update({ label }).eq('id', existing.id);
-      console.log(`  ↻ ${filename} (already in library; label refreshed)`);
+      await sb.from('library_images')
+        .update({ label, folder })
+        .eq('id', existing.id);
+      console.log(`  ↻ ${folderLabel}${filename} (refreshed)`);
     } else {
       const { error } = await sb.from('library_images').insert({
         image_path: storageKey,
         label,
+        folder,
       });
       if (error) {
-        console.error(`  ✗ ${filename}: insert failed — ${error.message}`);
+        console.error(`  ✗ ${folderLabel}${filename}: insert failed — ${error.message}`);
       } else {
-        console.log(`  + ${filename} → library`);
+        console.log(`  + ${folderLabel}${filename} → library`);
       }
     }
   }
