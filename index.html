@@ -1624,10 +1624,13 @@ function buildFilename(variant) {
   //      inherit the parent's custom name when downloaded together)
   //   3. headline extracted from a meaningful prompt
   let base;
+  let userNamed = false;
   if (variant.display_name && variant.display_name.trim()) {
     base = slugify(variant.display_name.trim());
+    userNamed = true;
   } else if (variant._inherited_display_name && variant._inherited_display_name.trim()) {
     base = slugify(variant._inherited_display_name.trim());
+    userNamed = true;
   } else {
     let promptForName;
     if (variant.edit_prompt && !isAutoReformatPrompt(variant.edit_prompt)) {
@@ -1638,8 +1641,13 @@ function buildFilename(variant) {
     base = slugify(extractHeadline(promptForName));
   }
   const aspect = aspectSlug(variant.aspect);
+
+  // Variation suffix: only auto-add when we're FALLING BACK to a generated
+  // name from the prompt. If the user set a name themselves, trust them —
+  // they can put their own version numbering inside the name if they want,
+  // and we shouldn't double up with "name-v3".
   const totalVars = variant.jobs_variations ?? 1;
-  const vSuffix = (totalVars > 1 && variant.variation_index)
+  const vSuffix = (!userNamed && totalVars > 1 && variant.variation_index)
     ? `-v${variant.variation_index}`
     : '';
   return `${base}-${aspect}${vSuffix}.png`;
