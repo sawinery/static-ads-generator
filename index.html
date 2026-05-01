@@ -510,6 +510,7 @@ function initClient() {
     $('conn-status').textContent = 'connected';
     $('conn-status').style.color = 'var(--accent)';
     refresh();
+    loadTemplates();
   } catch (e) {
     $('conn-status').textContent = 'connection error';
     $('conn-status').style.color = 'var(--danger)';
@@ -2036,142 +2037,169 @@ setInterval(() => {
   if (inFlight) refresh(false);
 }, 15000);
 
-// ---- prompt templates (curated starter prompts for common ad types) ----
-const PROMPT_TEMPLATES = [
-  {
-    name: '— Product launch (clean & bold)',
-    prompt: `Static product launch ad for [PRODUCT NAME].
+// ---- prompt templates (DB-driven, editable via "Manage" modal) ----
+let templates = [];   // [{id, name, content}]
 
-Visual style: Apple-launch aesthetic — clean, minimal, single hero subject, generous negative space. Soft studio lighting with subtle shadow falloff. Premium, modern.
+async function loadTemplates() {
+  if (!sb) return;
+  const { data, error } = await sb.from('prompt_templates')
+    .select('id, name, content, sort_order')
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) { console.warn('load templates failed:', error); templates = []; }
+  else templates = data ?? [];
+  populateTemplateDropdown();
+}
 
-Subject: [PRODUCT] floating or resting cleanly center-frame, slight 3/4 angle.
-
-Headline (top, large bold serif, ~80pt): "[HEADLINE]"
-Subhead (below headline, lighter weight, ~24pt): "[SUBHEADLINE]"
-CTA (bottom center, button-shaped, accent color): "[CTA TEXT]"
-
-Palette: cream background (#F8F5EE), warm neutrals, single accent color.
-
-Avoid: people, hands, lifestyle clutter, text other than what's specified, motion blur, stickers, overlay graphics.`
-  },
-  {
-    name: '— Before / After comparison',
-    prompt: `Side-by-side before/after comparison banner.
-
-Layout: Left half = the BEFORE image. Right half = the AFTER image. Vertical divider line down the center, thin.
-
-Top center label: "BEFORE | AFTER" (small caps, bold sans-serif)
-Bottom CTA (full-width, accent color): "[CTA TEXT]"
-Top headline (above divider, centered): "[HEADLINE]"
-
-Visual style: documentary, honest, photographic. No filter glow, no over-saturation. Same lighting/angle on both sides so the difference reads cleanly.
-
-Avoid: distracting backgrounds, watermarks, multiple competing CTAs.`
-  },
-  {
-    name: '— Sale / Discount (high urgency)',
-    prompt: `High-urgency sale banner.
-
-Headline (very large, top half, bold sans-serif italic): "[HEADLINE — e.g. '50% OFF']"
-Sub-headline (just below): "[OFFER DETAILS — e.g. 'Today only. Free shipping over $50.']"
-CTA (bottom, button-shaped, contrasting color): "[CTA TEXT — e.g. 'Shop now']"
-
-Visual style: bold and graphic. Saturated color block background (single dominant color), oversized typography that fills most of the canvas, energetic. Think 90s Nike / loud editorial.
-
-Subject: the product, photographed straight-on, slight scale-up, small in-frame.
-
-Palette: one bold color (red, electric blue, or yellow) + black + white only.
-
-Avoid: gradients, soft pastel colors, lifestyle settings, multiple products.`
-  },
-  {
-    name: '— Testimonial / quote',
-    prompt: `Testimonial-style ad.
-
-Layout: customer photo on left third (circular crop, soft edges). Quote on right two-thirds.
-
-Quote text (large serif, italic, prominent): "[QUOTE — e.g. 'Best purchase I made all year.']"
-Attribution (below quote, smaller, regular weight): — [NAME], [LOCATION/ROLE]
-Brand mark (bottom right, small): logo + product name
-CTA (bottom center, subtle): "[CTA TEXT]"
-
-Visual style: editorial, magazine-quality, refined. Soft daylight. Warm neutral palette. Authentic feel — not stock-photo glossy.
-
-Avoid: over-saturated colors, AI-perfect skin, multiple quotes, busy backgrounds.`
-  },
-  {
-    name: '— App install ad',
-    prompt: `App install ad.
-
-Layout: phone mockup on right (3/4 angle, screen visible showing the app). Headline + value prop on left.
-
-Headline (large, bold sans, top of left column): "[HEADLINE — e.g. 'Track your habits in 3 taps']"
-Three bullets below (each with a small icon): "[BENEFIT 1]" / "[BENEFIT 2]" / "[BENEFIT 3]"
-App store badges (bottom left): App Store + Google Play
-
-Visual style: modern SaaS / startup. Light gradient background (off-white to soft accent). Crisp UI rendering on phone screen.
-
-Palette: white + one accent color (the brand's primary).
-
-Avoid: real text on app screen that's gibberish, low-poly mockups, dated bevel/shadow effects.`
-  },
-  {
-    name: '— Vs / comparison (us vs them)',
-    prompt: `Comparison "vs" banner.
-
-Layout: split center vertically. Left side = OUR PRODUCT (highlighted, bright, centered). Right side = the alternative (muted, smaller).
-
-Top center label: "[OUR BRAND] vs [COMPETITOR/ALTERNATIVE]"
-Below the split: 3 short comparison rows, checkmark on our side, X on theirs:
-  - "[FEATURE 1]"
-  - "[FEATURE 2]"
-  - "[FEATURE 3]"
-CTA (bottom, full-width): "[CTA TEXT]"
-
-Visual style: clean infographic. Confident, factual tone (not aggressive).
-
-Avoid: trash-talking visuals, exaggerated proportions, competitor logos (use generic shapes/silhouettes instead).`
-  },
-  {
-    name: '— Lifestyle / aspirational',
-    prompt: `Aspirational lifestyle ad.
-
-Subject: [PERSON OR SCENE] using/wearing [PRODUCT] in a real-feeling moment. Natural pose, candid, looking away from camera.
-
-Setting: [LOCATION — e.g. 'morning kitchen with sunlight', 'mountain trail at dawn', 'urban rooftop at golden hour']
-
-Headline (overlay top, large serif): "[HEADLINE]"
-CTA (bottom right, button): "[CTA TEXT]"
-Brand mark (bottom left, small)
-
-Visual style: photographic, soft daylight, slight film grain, warm tones, organic textures. Editorial-quality lifestyle photography (think Aesop, Le Labo, Patagonia).
-
-Avoid: posed studio looks, oversaturated colors, AI-perfect faces, generic stock-photo feel, motion blur.`
-  },
-];
-
-// Populate the dropdown
-(function populateTemplates() {
+function populateTemplateDropdown() {
   const sel = $('template-select');
   if (!sel) return;
-  for (const t of PROMPT_TEMPLATES) {
+  // Clear all but the first placeholder option
+  while (sel.options.length > 1) sel.remove(1);
+  for (const t of templates) {
     const opt = document.createElement('option');
-    opt.value = t.name;
+    opt.value = t.id;
     opt.textContent = t.name;
     sel.appendChild(opt);
   }
+  // Add a final separator + manage option
+  const sep = document.createElement('option');
+  sep.disabled = true;
+  sep.textContent = '──────';
+  sel.appendChild(sep);
+  const mgr = document.createElement('option');
+  mgr.value = '__manage__';
+  mgr.textContent = '✎ Manage templates…';
+  sel.appendChild(mgr);
+}
+
+(function wireTemplateSelect() {
+  const sel = $('template-select');
+  if (!sel) return;
   sel.onchange = () => {
-    const tpl = PROMPT_TEMPLATES.find(t => t.name === sel.value);
-    if (!tpl) return;
+    const v = sel.value;
+    if (!v) return;
+    if (v === '__manage__') {
+      sel.value = '';
+      openTemplatesManager();
+      return;
+    }
+    const tpl = templates.find(t => t.id === v);
+    if (!tpl) { sel.value = ''; return; }
     const existing = $('prompt').value.trim();
     if (existing && !confirm('Replace your current prompt with this template?')) {
       sel.value = '';
       return;
     }
-    $('prompt').value = tpl.prompt;
-    sel.value = '';  // reset to placeholder so picking the same one again still triggers
+    $('prompt').value = tpl.content;
+    sel.value = '';
     $('prompt').focus();
   };
+})();
+
+// ---- templates manager modal ----
+function openTemplatesManager() {
+  if (!sb) { alert('connect first'); return; }
+  let modal = document.getElementById('templates-modal');
+  if (modal) modal.remove();
+  modal = document.createElement('div');
+  modal.id = 'templates-modal';
+  modal.className = 'modal-bg open';
+  modal.innerHTML = `
+    <div class="modal" style="width:min(720px, 92vw); max-height:85vh; padding:0; display:flex; flex-direction:column;">
+      <div style="padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px;">
+        <h3 style="margin:0; font-size:14px;">Prompt templates</h3>
+        <span style="flex:1"></span>
+        <button class="btn ghost small" id="tm-new">+ New template</button>
+        <button class="btn ghost small" id="tm-close">Close</button>
+      </div>
+      <div id="tm-list" style="overflow:auto; padding:14px;"></div>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('tm-close').onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  document.getElementById('tm-new').onclick = () => editTemplate(null);
+
+  renderTemplateList();
+}
+
+function renderTemplateList() {
+  const list = document.getElementById('tm-list');
+  if (!list) return;
+  if (!templates.length) {
+    list.innerHTML = `<div style="text-align:center; color:var(--ink-low); padding:30px;">No templates yet. Click "+ New template" above.</div>`;
+    return;
+  }
+  list.innerHTML = templates.map(t => `
+    <div style="border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; margin-bottom:8px; background:var(--panel-2);">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div style="font-weight:600; font-size:13px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escape(t.name)}</div>
+        <button class="btn ghost small" data-tm-edit="${t.id}">Edit</button>
+        <button class="btn ghost small" data-tm-del="${t.id}" style="color:var(--danger)">Delete</button>
+      </div>
+      <div style="font-size:11px; color:var(--ink-low); margin-top:4px; max-height:40px; overflow:hidden; line-height:1.4;">${escape(t.content.slice(0, 200))}${t.content.length > 200 ? '…' : ''}</div>
+    </div>
+  `).join('');
+  list.querySelectorAll('[data-tm-edit]').forEach(b => {
+    b.onclick = () => editTemplate(templates.find(t => t.id === b.dataset.tmEdit));
+  });
+  list.querySelectorAll('[data-tm-del]').forEach(b => {
+    b.onclick = async () => {
+      const t = templates.find(x => x.id === b.dataset.tmDel);
+      if (!t) return;
+      if (!confirm(`Delete template "${t.name}"?`)) return;
+      const { error } = await sb.from('prompt_templates').delete().eq('id', t.id);
+      if (error) { alert(error.message); return; }
+      await loadTemplates();
+      renderTemplateList();
+    };
+  });
+}
+
+function editTemplate(existing) {
+  // Inline edit form replaces the list
+  const list = document.getElementById('tm-list');
+  if (!list) return;
+  const isNew = !existing;
+  const t = existing || { name: '', content: '' };
+  list.innerHTML = `
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <div>
+        <label>Name</label>
+        <input type="text" id="tm-edit-name" value="${escape(t.name)}" placeholder="Short label, e.g. 'Holiday sale'" maxlength="80">
+      </div>
+      <div>
+        <label>Content</label>
+        <textarea id="tm-edit-content" placeholder="The prompt text. Use [PLACEHOLDERS] in brackets for parts you'll fill in each time." style="min-height:280px;">${escape(t.content)}</textarea>
+        <div class="hint">Tip: lead with format/surface ("Static 9:16 ad for…"), then describe style, then specify text positions. Use [HEADLINE], [CTA TEXT], etc. as fill-in placeholders.</div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="tm-edit-save">${isNew ? 'Create' : 'Save changes'}</button>
+        <button class="btn ghost" id="tm-edit-cancel">Cancel</button>
+      </div>
+    </div>`;
+  document.getElementById('tm-edit-cancel').onclick = () => renderTemplateList();
+  document.getElementById('tm-edit-save').onclick = async () => {
+    const name = document.getElementById('tm-edit-name').value.trim();
+    const content = document.getElementById('tm-edit-content').value.trim();
+    if (!name) { alert('Name required'); return; }
+    if (!content) { alert('Content required'); return; }
+    if (isNew) {
+      // Sort to end
+      const maxSort = templates.reduce((m, x) => Math.max(m, x.sort_order || 0), 0);
+      const { error } = await sb.from('prompt_templates').insert({
+        name, content, sort_order: maxSort + 10,
+      });
+      if (error) { alert(error.message); return; }
+    } else {
+      const { error } = await sb.from('prompt_templates').update({ name, content }).eq('id', t.id);
+      if (error) { alert(error.message); return; }
+    }
+    await loadTemplates();
+    renderTemplateList();
+  };
+}
+
 })();
 
 // ---- prompt add-on (persistent, applies to every submit) ----
