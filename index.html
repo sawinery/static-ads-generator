@@ -228,6 +228,10 @@
   }
   .ad .meta-row { display:flex; justify-content:space-between; font-family:var(--mono); font-size:10.5px; color:var(--ink-low); margin-top:8px; }
   .ad .meta-row .cost { color:var(--accent-2); }
+  .ad .meta-row .timestamp {
+    font-family:var(--mono); font-size:10px; color:var(--ink-low);
+    letter-spacing:.04em;
+  }
   .ad .actions { display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px; border-top:1px solid var(--line); background:var(--bg); }
   .ad .actions .btn { flex:1 1 calc(50% - 3px); min-width:0; padding:5px 6px; font-size:11.5px; }
   .ad .actions .btn.reformat-done {
@@ -283,7 +287,12 @@
 
     <div class="card">
       <h2>Single ad</h2>
-      <label>Prompt</label>
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+        <label style="margin:0;">Prompt</label>
+        <select id="template-select" style="font-size:11px; padding:3px 6px; max-width:60%;">
+          <option value="">📋 Templates…</option>
+        </select>
+      </div>
       <textarea id="prompt" placeholder="High-contrast static ad for a coffee subscription. Bold serif headline 'Wake the hell up.' Steaming espresso shot, dark wood backdrop. Logo bottom-center."></textarea>
 
       <details id="addon-details" style="margin-top:10px;">
@@ -297,8 +306,9 @@
       <label style="margin-top:10px">Reference images (optional)</label>
       <div id="ref-images" class="ref-images"><!-- populated by JS --></div>
       <input type="file" id="ref-add-input" accept="image/*" style="display:none">
-      <div style="display:flex; gap:6px; margin-top:6px;">
+      <div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
         <button type="button" class="btn ghost small" id="ref-add-btn">+ Add image</button>
+        <button type="button" class="btn ghost small" id="ref-library-btn">📚 Library</button>
         <button type="button" class="btn ghost small" id="ref-clear-btn" style="display:none">Clear all</button>
       </div>
 
@@ -343,50 +353,6 @@
       <button class="btn" id="submit-one" style="width:100%; margin-top:10px">Submit job</button>
       <div class="err" id="submit-err"></div>
     </div>
-
-    <div class="card">
-      <h2>Batch (paste lines, one prompt per line)</h2>
-      <textarea id="batch" placeholder="Coffee subscription ad...&#10;Sneaker drop ad, neon palette...&#10;SaaS productivity ad, minimal..."></textarea>
-
-      <label style="margin-top:10px">Aspect ratios</label>
-      <div style="display:flex; gap:14px; padding:6px 0; flex-wrap:wrap;">
-        <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
-          <input type="checkbox" id="batch-asp-9-16" checked> 9:16
-        </label>
-        <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
-          <input type="checkbox" id="batch-asp-1-1"> 1:1
-        </label>
-        <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
-          <input type="checkbox" id="batch-asp-16-9"> 16:9
-        </label>
-      </div>
-
-      <div class="row" style="margin-top:10px">
-        <div>
-          <label>Quality</label>
-          <select id="batch-quality">
-            <option value="low">low</option>
-            <option value="medium" selected>medium</option>
-            <option value="high">high</option>
-          </select>
-        </div>
-        <div>
-          <label>Variations per aspect</label>
-          <select id="batch-variations">
-            <option value="1" selected>1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-          </select>
-        </div>
-      </div>
-
-      <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink); margin-top:10px;">
-        <input type="checkbox" id="batch-safe-zones"> Apply Meta safe zones
-      </label>
-
-      <button class="btn ghost" id="submit-batch" style="width:100%; margin-top:10px">Queue batch</button>
-    </div>
   </section>
 
   <!-- RIGHT: jobs list -->
@@ -415,6 +381,19 @@
 
 <!-- "from #X" parent peek modal -->
 <!-- prompt preview modal (shown when submitting with multi-image jobs) -->
+<!-- image library modal -->
+<div class="modal-bg" id="library-modal">
+  <div class="modal" style="width:min(720px, 92vw); padding:0; max-height:80vh; display:flex; flex-direction:column;">
+    <div style="padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px;">
+      <h3 style="margin:0; font-size:14px;">Image library</h3>
+      <span class="hint" style="margin:0;">Click to add to your current job. Hold shift-click to add multiple.</span>
+      <span style="flex:1"></span>
+      <button class="btn ghost small" id="library-close">Close</button>
+    </div>
+    <div id="library-grid" style="padding:14px; overflow:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px;"></div>
+  </div>
+</div>
+
 <div class="modal-bg" id="preview-modal">
   <div class="modal" style="width:min(640px, 92vw);">
     <h3 style="margin:0 0 4px;">Review composed prompt</h3>
@@ -623,6 +602,7 @@ function renderRefImages() {
         <div class="controls">
           <button data-up="${i}" ${i === 0 ? 'disabled style="opacity:0.3"' : ''} title="Move up">▲</button>
           <button data-down="${i}" ${i === refImages.length - 1 ? 'disabled style="opacity:0.3"' : ''} title="Move down">▼</button>
+          ${r.kind === 'sticky' ? `<button data-save="${i}" title="Save to library">💾</button>` : ''}
           <button class="x" data-remove="${i}" title="Remove">×</button>
         </div>
       </div>`;
@@ -677,6 +657,14 @@ function renderRefImages() {
       }
     };
   });
+  wrap.querySelectorAll('[data-save]').forEach(b => {
+    b.onclick = () => {
+      const i = +b.dataset.save;
+      const r = refImages[i];
+      if (r.kind !== 'sticky') return;
+      saveToLibrary(r.path, r.name);
+    };
+  });
 }
 
 function publicInputUrl(path) {
@@ -710,6 +698,98 @@ $('ref-clear-btn').onclick = () => {
   saveRefImagesToStorage();
   renderRefImages();
 };
+
+// ---- image library ----
+$('ref-library-btn').onclick = openLibrary;
+$('library-close').onclick = () => $('library-modal').classList.remove('open');
+$('library-modal').onclick = (e) => {
+  if (e.target.id === 'library-modal') $('library-modal').classList.remove('open');
+};
+
+async function openLibrary() {
+  if (!sb) { alert('connect first'); return; }
+  $('library-modal').classList.add('open');
+  $('library-grid').innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--ink-low); padding:40px;">Loading…</div>`;
+
+  const { data: items, error } = await sb
+    .from('library_images')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) { $('library-grid').innerHTML = `<div style="color:var(--danger)">${escape(error.message)}</div>`; return; }
+
+  if (!items || items.length === 0) {
+    $('library-grid').innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--ink-low); padding:40px;">
+      No images saved to your library yet.<br><span class="hint">Click 💾 next to any reference image to save it for reuse.</span>
+    </div>`;
+    return;
+  }
+
+  $('library-grid').innerHTML = items.map(it => `
+    <div class="lib-item" data-path="${it.image_path}" data-id="${it.id}" style="position:relative; cursor:pointer; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:var(--panel-2);">
+      <img src="${publicInputUrl(it.image_path)}" loading="lazy" style="width:100%; aspect-ratio:1/1; object-fit:cover; display:block;">
+      <div style="padding:6px 8px; font-size:11px;">
+        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escape(it.label || it.image_path)}">${escape(it.label || (it.image_path.split('-').slice(1).join('-') || 'image'))}</div>
+        <div style="display:flex; gap:6px; margin-top:6px;">
+          <button class="btn small" data-act="lib-add" data-path="${it.image_path}" data-label="${escape(it.label || '')}" style="flex:1; padding:3px 6px; font-size:10px;">Add</button>
+          <button class="btn ghost small" data-act="lib-rename" data-id="${it.id}" data-label="${escape(it.label || '')}" style="padding:3px 6px; font-size:10px;">✎</button>
+          <button class="btn ghost small" data-act="lib-del" data-id="${it.id}" style="padding:3px 6px; font-size:10px; color:var(--danger);">×</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  $('library-grid').querySelectorAll('[data-act="lib-add"]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const path = b.dataset.path;
+      const label = b.dataset.label;
+      // Skip if already in current refImages
+      if (refImages.some(r => r.kind === 'sticky' && r.path === path)) {
+        alert('Already in your job');
+        return;
+      }
+      refImages.push({
+        kind: 'sticky', path, name: label || path.split('-').slice(1).join('-'),
+        role: refImages.length === 0 ? 'reference' : '',
+      });
+      saveRefImagesToStorage();
+      renderRefImages();
+      // Don't close — user might want to add multiple
+    };
+  });
+  $('library-grid').querySelectorAll('[data-act="lib-rename"]').forEach(b => {
+    b.onclick = async (e) => {
+      e.stopPropagation();
+      const id = b.dataset.id;
+      const newLabel = prompt('New label:', b.dataset.label || '');
+      if (newLabel === null) return;
+      const { error } = await sb.from('library_images').update({ label: newLabel.trim() }).eq('id', id);
+      if (error) { alert(error.message); return; }
+      openLibrary();
+    };
+  });
+  $('library-grid').querySelectorAll('[data-act="lib-del"]').forEach(b => {
+    b.onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm('Remove from library? (Image stays in storage but is hidden from picker.)')) return;
+      const { error } = await sb.from('library_images').delete().eq('id', b.dataset.id);
+      if (error) { alert(error.message); return; }
+      openLibrary();
+    };
+  });
+}
+
+async function saveToLibrary(path, defaultLabel) {
+  // Already in library?
+  const { data: existing } = await sb.from('library_images').select('id').eq('image_path', path).maybeSingle();
+  if (existing) { alert('Already in library'); return; }
+  const label = prompt('Label this image (optional):', defaultLabel || '');
+  if (label === null) return;
+  const { error } = await sb.from('library_images').insert({ image_path: path, label: label.trim() });
+  if (error) { alert(error.message); return; }
+  alert('Saved to library');
+  renderRefImages();  // update UI in case the row had a "save" indicator
+}
 
 // Compose the auto-prepended prompt for multi-image jobs.
 // Returns the user prompt unchanged for 0 or 1 image jobs.
@@ -804,7 +884,9 @@ $('submit-one').onclick = async () => {
 
   // Append the persistent "Prompt add-on" if the user has set one.
   const addon = ($('addon').value || '').trim();
-  const userPrompt = addon ? `${rawPrompt}\n\n${addon}` : rawPrompt;
+  // Prepend the persistent "Prompt add-on" if the user has set one. Goes BEFORE
+  // the main prompt so style/brand guidance is weighted earliest by the model.
+  const userPrompt = addon ? `${addon}\n\n${rawPrompt}` : rawPrompt;
 
   const btn = $('submit-one');
   btn.disabled = true;
@@ -847,42 +929,13 @@ $('preview-submit').onclick = async () => {
   }
 };
 
-// ---- submit batch ----
-$('submit-batch').onclick = async () => {
-  if (!sb) return;
-  const lines = $('batch').value.split('\n').map(s=>s.trim()).filter(Boolean);
-  if (!lines.length) return;
-
-  const aspects = [];
-  if ($('batch-asp-9-16').checked) aspects.push('9:16');
-  if ($('batch-asp-1-1').checked)  aspects.push('1:1');
-  if ($('batch-asp-16-9').checked) aspects.push('16:9');
-  if (!aspects.length) { alert('pick at least one aspect ratio'); return; }
-
-  const addon = ($('addon').value || '').trim();
-  const rows = lines.map(p => ({
-    prompt: addon ? `${p}\n\n${addon}` : p,
-    quality: $('batch-quality').value,
-    aspects,
-    variations: parseInt($('batch-variations').value, 10),
-    safe_zones: $('batch-safe-zones').checked,
-  }));
-  const { error } = await sb.from('jobs').insert(rows);
-  if (error) { alert(error.message); return; }
-  fetch(`${$('sb-url').value}/functions/v1/process-job`, {
-    method:'POST',
-    headers: { Authorization: `Bearer ${$('sb-key').value}` },
-  }).catch(()=>{});
-  $('batch').value = '';
-  refresh();
-};
-
 // ---- state ----
 const PAGE_SIZE = 50;
 let currentTab = { kind: 'all' };  // { kind:'all' } | { kind:'collection', id, name } | { kind:'find', seq }
 let currentPage = 0;
 let allVariants = [];
 let totalAll = 0;
+let totalAllCost = 0;
 let collections = [];              // [{id, name, count}]
 // For the picker popover, we cache which collections each variant is in:
 let variantMembership = {};        // variant_id -> Set<collection_id>
@@ -900,6 +953,18 @@ async function refresh(userInitiated = false) {
   ]);
   totalAll = allRes.count ?? 0;
   collections = (colsRes.data ?? []).map(c => ({ ...c, count: 0 }));
+
+  // Total cost across ALL variants (not just current page). We sum on the
+  // client because Supabase REST doesn't expose SUM() directly. cost_usd is
+  // a small numeric column so even with thousands of rows this is cheap.
+  // If this ever gets slow, replace with a Postgres view that pre-aggregates.
+  totalAllCost = 0;
+  try {
+    const { data: costRows } = await sb.from('variants').select('cost_usd');
+    if (costRows) {
+      for (const r of costRows) totalAllCost += Number(r.cost_usd || 0);
+    }
+  } catch (e) { console.warn('cost sum failed:', e); }
 
   // Get per-collection counts in one query
   if (collections.length) {
@@ -1132,13 +1197,12 @@ function render() {
   }
   $('empty').style.display = 'none';
 
-  // Stats line — for the current tab/page
-  const total = allVariants.reduce((s,v) => s + Number(v.cost_usd || 0), 0);
+  // Stats line: page-level info + grand total cost across ALL variants
   const done = allVariants.filter(v => v.status === 'completed').length;
   const pending = allVariants.filter(v => v.status === 'pending' || v.status === 'processing').length;
   const offset = currentPage * PAGE_SIZE;
   $('stats').textContent =
-    `${offset + 1}–${offset + allVariants.length} of ${totalForTab} · ${done} done · ${pending} in-flight · page total $${total.toFixed(4)}`;
+    `${offset + 1}–${offset + allVariants.length} of ${totalForTab} · ${done} done · ${pending} in-flight · total spent $${totalAllCost.toFixed(4)}`;
 
   wrap.innerHTML = allVariants.map(v => renderAd(v)).join('');
 
@@ -1306,6 +1370,9 @@ function renderAd(v) {
           <span class="status ${v.status}">${v.status}</span>
           <span class="cost">${v.cost_usd != null ? '$'+Number(v.cost_usd).toFixed(4) : '—'}</span>
         </div>
+        <div class="meta-row" style="margin-top:4px;">
+          <span class="timestamp" title="${escape(new Date(v.created_at).toLocaleString())}">${formatRelative(v.created_at)}</span>
+        </div>
       </div>
       <div class="actions">
         ${v.status === 'completed' ? (() => {
@@ -1330,6 +1397,21 @@ function renderAd(v) {
 }
 
 function escape(s) { return (s||'').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+
+function formatRelative(timestamp) {
+  if (!timestamp) return '';
+  const ms = Date.now() - new Date(timestamp).getTime();
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60)    return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60)    return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24)     return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  if (d < 7)       return `${d}d ago`;
+  // Beyond a week, show short date
+  return new Date(timestamp).toLocaleDateString(undefined, { month:'short', day:'numeric' });
+}
 
 // Cache signed URLs in localStorage so they persist across page loads.
 // We sign for 24h and consider entries fresh for 23h (small buffer for clock skew).
@@ -1377,6 +1459,12 @@ function aspectSlug(aspect) {
   return (aspect || '').replace(':', 'x');
 }
 
+function isAutoReformatPrompt(p) {
+  // Detects the auto-generated reformat prompt we set in directReformat()
+  // so we can skip it when looking for a meaningful headline.
+  return /^\s*recreate this ad adapted to/i.test(p || '');
+}
+
 function extractHeadline(promptText) {
   // Prefer an explicit Headline:"..."  / Headline: ... line
   const m = (promptText || '').match(/headline\s*[:=]\s*['"“”]?([^'"“”\n]{1,80})['"“”]?/i);
@@ -1397,9 +1485,17 @@ function slugify(s) {
 }
 
 function buildFilename(variant) {
-  // variant has: aspect, variation_index, jobs.prompt (or edit_prompt), and
-  // optionally jobs.variations to know if a -v# suffix is needed.
-  const base = slugify(extractHeadline(variant.edit_prompt || variant.jobs?.prompt || ''));
+  // Pick the most-meaningful prompt for naming:
+  // - For reformats (auto-generated "Recreate this ad..." edit_prompt), use the parent job's prompt
+  // - For real edits/reuses, use the variant's own edit_prompt
+  // - Otherwise fall back to the job prompt
+  let promptForName;
+  if (variant.edit_prompt && !isAutoReformatPrompt(variant.edit_prompt)) {
+    promptForName = variant.edit_prompt;
+  } else {
+    promptForName = variant.jobs?.prompt || '';
+  }
+  const base = slugify(extractHeadline(promptForName));
   const aspect = aspectSlug(variant.aspect);
   const totalVars = variant.jobs_variations ?? 1;
   const vSuffix = (totalVars > 1 && variant.variation_index)
@@ -1788,6 +1884,144 @@ setInterval(() => {
   const inFlight = allVariants.some(v => v.status === 'pending' || v.status === 'processing');
   if (inFlight) refresh(false);
 }, 15000);
+
+// ---- prompt templates (curated starter prompts for common ad types) ----
+const PROMPT_TEMPLATES = [
+  {
+    name: '— Product launch (clean & bold)',
+    prompt: `Static product launch ad for [PRODUCT NAME].
+
+Visual style: Apple-launch aesthetic — clean, minimal, single hero subject, generous negative space. Soft studio lighting with subtle shadow falloff. Premium, modern.
+
+Subject: [PRODUCT] floating or resting cleanly center-frame, slight 3/4 angle.
+
+Headline (top, large bold serif, ~80pt): "[HEADLINE]"
+Subhead (below headline, lighter weight, ~24pt): "[SUBHEADLINE]"
+CTA (bottom center, button-shaped, accent color): "[CTA TEXT]"
+
+Palette: cream background (#F8F5EE), warm neutrals, single accent color.
+
+Avoid: people, hands, lifestyle clutter, text other than what's specified, motion blur, stickers, overlay graphics.`
+  },
+  {
+    name: '— Before / After comparison',
+    prompt: `Side-by-side before/after comparison banner.
+
+Layout: Left half = the BEFORE image. Right half = the AFTER image. Vertical divider line down the center, thin.
+
+Top center label: "BEFORE | AFTER" (small caps, bold sans-serif)
+Bottom CTA (full-width, accent color): "[CTA TEXT]"
+Top headline (above divider, centered): "[HEADLINE]"
+
+Visual style: documentary, honest, photographic. No filter glow, no over-saturation. Same lighting/angle on both sides so the difference reads cleanly.
+
+Avoid: distracting backgrounds, watermarks, multiple competing CTAs.`
+  },
+  {
+    name: '— Sale / Discount (high urgency)',
+    prompt: `High-urgency sale banner.
+
+Headline (very large, top half, bold sans-serif italic): "[HEADLINE — e.g. '50% OFF']"
+Sub-headline (just below): "[OFFER DETAILS — e.g. 'Today only. Free shipping over $50.']"
+CTA (bottom, button-shaped, contrasting color): "[CTA TEXT — e.g. 'Shop now']"
+
+Visual style: bold and graphic. Saturated color block background (single dominant color), oversized typography that fills most of the canvas, energetic. Think 90s Nike / loud editorial.
+
+Subject: the product, photographed straight-on, slight scale-up, small in-frame.
+
+Palette: one bold color (red, electric blue, or yellow) + black + white only.
+
+Avoid: gradients, soft pastel colors, lifestyle settings, multiple products.`
+  },
+  {
+    name: '— Testimonial / quote',
+    prompt: `Testimonial-style ad.
+
+Layout: customer photo on left third (circular crop, soft edges). Quote on right two-thirds.
+
+Quote text (large serif, italic, prominent): "[QUOTE — e.g. 'Best purchase I made all year.']"
+Attribution (below quote, smaller, regular weight): — [NAME], [LOCATION/ROLE]
+Brand mark (bottom right, small): logo + product name
+CTA (bottom center, subtle): "[CTA TEXT]"
+
+Visual style: editorial, magazine-quality, refined. Soft daylight. Warm neutral palette. Authentic feel — not stock-photo glossy.
+
+Avoid: over-saturated colors, AI-perfect skin, multiple quotes, busy backgrounds.`
+  },
+  {
+    name: '— App install ad',
+    prompt: `App install ad.
+
+Layout: phone mockup on right (3/4 angle, screen visible showing the app). Headline + value prop on left.
+
+Headline (large, bold sans, top of left column): "[HEADLINE — e.g. 'Track your habits in 3 taps']"
+Three bullets below (each with a small icon): "[BENEFIT 1]" / "[BENEFIT 2]" / "[BENEFIT 3]"
+App store badges (bottom left): App Store + Google Play
+
+Visual style: modern SaaS / startup. Light gradient background (off-white to soft accent). Crisp UI rendering on phone screen.
+
+Palette: white + one accent color (the brand's primary).
+
+Avoid: real text on app screen that's gibberish, low-poly mockups, dated bevel/shadow effects.`
+  },
+  {
+    name: '— Vs / comparison (us vs them)',
+    prompt: `Comparison "vs" banner.
+
+Layout: split center vertically. Left side = OUR PRODUCT (highlighted, bright, centered). Right side = the alternative (muted, smaller).
+
+Top center label: "[OUR BRAND] vs [COMPETITOR/ALTERNATIVE]"
+Below the split: 3 short comparison rows, checkmark on our side, X on theirs:
+  - "[FEATURE 1]"
+  - "[FEATURE 2]"
+  - "[FEATURE 3]"
+CTA (bottom, full-width): "[CTA TEXT]"
+
+Visual style: clean infographic. Confident, factual tone (not aggressive).
+
+Avoid: trash-talking visuals, exaggerated proportions, competitor logos (use generic shapes/silhouettes instead).`
+  },
+  {
+    name: '— Lifestyle / aspirational',
+    prompt: `Aspirational lifestyle ad.
+
+Subject: [PERSON OR SCENE] using/wearing [PRODUCT] in a real-feeling moment. Natural pose, candid, looking away from camera.
+
+Setting: [LOCATION — e.g. 'morning kitchen with sunlight', 'mountain trail at dawn', 'urban rooftop at golden hour']
+
+Headline (overlay top, large serif): "[HEADLINE]"
+CTA (bottom right, button): "[CTA TEXT]"
+Brand mark (bottom left, small)
+
+Visual style: photographic, soft daylight, slight film grain, warm tones, organic textures. Editorial-quality lifestyle photography (think Aesop, Le Labo, Patagonia).
+
+Avoid: posed studio looks, oversaturated colors, AI-perfect faces, generic stock-photo feel, motion blur.`
+  },
+];
+
+// Populate the dropdown
+(function populateTemplates() {
+  const sel = $('template-select');
+  if (!sel) return;
+  for (const t of PROMPT_TEMPLATES) {
+    const opt = document.createElement('option');
+    opt.value = t.name;
+    opt.textContent = t.name;
+    sel.appendChild(opt);
+  }
+  sel.onchange = () => {
+    const tpl = PROMPT_TEMPLATES.find(t => t.name === sel.value);
+    if (!tpl) return;
+    const existing = $('prompt').value.trim();
+    if (existing && !confirm('Replace your current prompt with this template?')) {
+      sel.value = '';
+      return;
+    }
+    $('prompt').value = tpl.prompt;
+    sel.value = '';  // reset to placeholder so picking the same one again still triggers
+    $('prompt').focus();
+  };
+})();
 
 // ---- prompt add-on (persistent, applies to every submit) ----
 const ADDON_KEY = 'prompt-addon-v1';
