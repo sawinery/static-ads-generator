@@ -416,8 +416,11 @@
     <div style="display:flex; flex:1; min-height:0;">
       <!-- folder sidebar -->
       <div id="library-folders" style="width:200px; border-right:1px solid var(--line); padding:10px 6px; overflow-y:auto; flex-shrink:0;"></div>
-      <!-- image grid -->
-      <div id="library-grid" style="padding:14px; overflow:auto; flex:1; display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; align-content:start;"></div>
+      <!-- image grid + pager -->
+      <div style="flex:1; display:flex; flex-direction:column; min-width:0;">
+        <div id="library-grid" style="padding:14px; overflow:auto; flex:1; display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; align-content:start;"></div>
+        <div id="library-pager" style="display:none; padding:8px 14px; border-top:1px solid var(--line); align-items:center; gap:6px; justify-content:center; flex-shrink:0;"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -739,12 +742,16 @@ $('library-modal').onclick = (e) => {
 // handlers can re-render without re-fetching.
 let libraryItems = [];
 let librarySelectedFolder = '__all__';   // '__all__' | '__none__' | folder name
+let libraryPage = 0;                     // 0-indexed page within the current folder
+const LIBRARY_PAGE_SIZE = 30;
 
 async function openLibrary() {
   if (!sb) { alert('connect first'); return; }
   $('library-modal').classList.add('open');
   $('library-folders').innerHTML = '';
   $('library-grid').innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--ink-low); padding:40px;">Loading…</div>`;
+  $('library-pager').style.display = 'none';
+  libraryPage = 0;
 
   const { data: items, error } = await sb
     .from('library_images')
@@ -800,6 +807,7 @@ function renderLibraryFolders() {
   $('library-folders').querySelectorAll('.lib-folder').forEach(el => {
     el.onclick = () => {
       librarySelectedFolder = el.dataset.folder;
+      libraryPage = 0;  // reset to first page when switching folders
       renderLibraryFolders();
       renderLibraryGrid();
     };
@@ -815,10 +823,21 @@ function renderLibraryGrid() {
 
   if (filtered.length === 0) {
     $('library-grid').innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--ink-low); padding:40px;">No images in this folder.</div>`;
+    $('library-pager').style.display = 'none';
     return;
   }
 
-  $('library-grid').innerHTML = filtered.map(it => `
+  // Clamp page in case the filtered set shrank
+  const maxPage = Math.max(0, Math.ceil(filtered.length / LIBRARY_PAGE_SIZE) - 1);
+  if (libraryPage > maxPage) libraryPage = maxPage;
+
+  // Slice for current page
+  const start = libraryPage * LIBRARY_PAGE_SIZE;
+  const pageItems = filtered.slice(start, start + LIBRARY_PAGE_SIZE);
+  // Scroll grid back to top whenever we render a new page
+  $('library-grid').scrollTop = 0;
+
+  $('library-grid').innerHTML = pageItems.map(it => `
     <div class="lib-item" data-path="${it.image_path}" data-id="${it.id}" style="position:relative; cursor:pointer; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:var(--panel-2);">
       <img src="${publicInputUrl(it.image_path)}" loading="lazy" style="width:100%; aspect-ratio:1/1; object-fit:cover; display:block;">
       <div style="padding:6px 8px; font-size:11px;">
@@ -884,6 +903,27 @@ function renderLibraryGrid() {
       openLibrary();
     };
   });
+
+  // ---- pager ----
+  const pager = $('library-pager');
+  if (filtered.length <= LIBRARY_PAGE_SIZE) {
+    pager.style.display = 'none';
+  } else {
+    pager.style.display = 'flex';
+    const showingFrom = start + 1;
+    const showingTo = Math.min(start + LIBRARY_PAGE_SIZE, filtered.length);
+    pager.innerHTML = `
+      <button class="btn ghost small" id="lib-page-first" ${libraryPage === 0 ? 'disabled' : ''}>« First</button>
+      <button class="btn ghost small" id="lib-page-prev"  ${libraryPage === 0 ? 'disabled' : ''}>‹ Prev</button>
+      <span class="hint" style="margin:0 8px; font-family:var(--mono); font-size:11px;">${showingFrom}–${showingTo} of ${filtered.length} · page ${libraryPage + 1} of ${maxPage + 1}</span>
+      <button class="btn ghost small" id="lib-page-next"  ${libraryPage >= maxPage ? 'disabled' : ''}>Next ›</button>
+      <button class="btn ghost small" id="lib-page-last"  ${libraryPage >= maxPage ? 'disabled' : ''}>Last »</button>
+    `;
+    $('lib-page-first').onclick = () => { libraryPage = 0;       renderLibraryGrid(); };
+    $('lib-page-prev').onclick  = () => { libraryPage = Math.max(0, libraryPage - 1);       renderLibraryGrid(); };
+    $('lib-page-next').onclick  = () => { libraryPage = Math.min(maxPage, libraryPage + 1); renderLibraryGrid(); };
+    $('lib-page-last').onclick  = () => { libraryPage = maxPage; renderLibraryGrid(); };
+  }
 }
 
 async function saveToLibrary(path, defaultLabel) {
