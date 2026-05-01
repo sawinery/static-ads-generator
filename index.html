@@ -171,6 +171,17 @@
   }
   .ad .body .from-link:hover { text-decoration:underline; }
 
+  /* library folder sidebar */
+  .lib-folder {
+    display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:4px;
+    cursor:pointer; font-size:12.5px; color:var(--ink-dim);
+    user-select:none;
+  }
+  .lib-folder:hover { background:var(--panel-2); color:var(--ink); }
+  .lib-folder.active { background:var(--accent); color:#0e0f12; font-weight:600; }
+  .lib-folder .lib-folder-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lib-folder .lib-folder-count { font-family:var(--mono); font-size:10px; opacity:0.7; }
+
   /* popover (collection picker) */
   .popover-bg {
     position:fixed; inset:0; z-index:55; background:transparent;
@@ -395,14 +406,19 @@
 <!-- prompt preview modal (shown when submitting with multi-image jobs) -->
 <!-- image library modal -->
 <div class="modal-bg" id="library-modal">
-  <div class="modal" style="width:min(720px, 92vw); padding:0; max-height:80vh; display:flex; flex-direction:column;">
+  <div class="modal" style="width:min(900px, 94vw); padding:0; max-height:85vh; display:flex; flex-direction:column;">
     <div style="padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px;">
       <h3 style="margin:0; font-size:14px;">Image library</h3>
-      <span class="hint" style="margin:0;">Click to add to your current job. Hold shift-click to add multiple.</span>
+      <span class="hint" style="margin:0;">Click Add to use in current job. You can add multiple before closing.</span>
       <span style="flex:1"></span>
       <button class="btn ghost small" id="library-close">Close</button>
     </div>
-    <div id="library-grid" style="padding:14px; overflow:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px;"></div>
+    <div style="display:flex; flex:1; min-height:0;">
+      <!-- folder sidebar -->
+      <div id="library-folders" style="width:200px; border-right:1px solid var(--line); padding:10px 6px; overflow-y:auto; flex-shrink:0;"></div>
+      <!-- image grid -->
+      <div id="library-grid" style="padding:14px; overflow:auto; flex:1; display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; align-content:start;"></div>
+    </div>
   </div>
 </div>
 
@@ -719,33 +735,100 @@ $('library-modal').onclick = (e) => {
   if (e.target.id === 'library-modal') $('library-modal').classList.remove('open');
 };
 
+// Library state for the open modal — kept module-scoped so the folder click
+// handlers can re-render without re-fetching.
+let libraryItems = [];
+let librarySelectedFolder = '__all__';   // '__all__' | '__none__' | folder name
+
 async function openLibrary() {
   if (!sb) { alert('connect first'); return; }
   $('library-modal').classList.add('open');
+  $('library-folders').innerHTML = '';
   $('library-grid').innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--ink-low); padding:40px;">Loading…</div>`;
 
   const { data: items, error } = await sb
     .from('library_images')
     .select('*')
+    .order('folder', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: false });
   if (error) { $('library-grid').innerHTML = `<div style="color:var(--danger)">${escape(error.message)}</div>`; return; }
+  libraryItems = items ?? [];
 
-  if (!items || items.length === 0) {
+  if (libraryItems.length === 0) {
+    $('library-folders').innerHTML = '';
     $('library-grid').innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--ink-low); padding:40px;">
-      No images saved to your library yet.<br><span class="hint">Click 💾 next to any reference image to save it for reuse.</span>
+      No images saved to your library yet.<br><span class="hint">Click 💾 next to any reference image to save it for reuse, or drop images into the <code>library/</code> folder in your repo.</span>
     </div>`;
     return;
   }
 
-  $('library-grid').innerHTML = items.map(it => `
+  renderLibraryFolders();
+  renderLibraryGrid();
+}
+
+function renderLibraryFolders() {
+  // Group counts
+  const counts = { __all__: libraryItems.length };
+  let unfoldered = 0;
+  for (const it of libraryItems) {
+    if (!it.folder) {
+      unfoldered++;
+    } else {
+      counts[it.folder] = (counts[it.folder] ?? 0) + 1;
+    }
+  }
+  if (unfoldered > 0) counts.__none__ = unfoldered;
+
+  // Build a stable sorted list of folder names (excluding the special keys)
+  const folderNames = Object.keys(counts)
+    .filter(k => k !== '__all__' && k !== '__none__')
+    .sort((a, b) => a.localeCompare(b));
+
+  const items = [
+    { key: '__all__', name: 'All images', count: counts.__all__ },
+    ...(counts.__none__ ? [{ key: '__none__', name: '(no folder)', count: counts.__none__ }] : []),
+    ...folderNames.map(f => ({ key: f, name: f, count: counts[f] })),
+  ];
+
+  $('library-folders').innerHTML = items.map(f => `
+    <div class="lib-folder ${librarySelectedFolder === f.key ? 'active' : ''}" data-folder="${escape(f.key)}">
+      <span class="lib-folder-name" title="${escape(f.name)}">${escape(f.name)}</span>
+      <span class="lib-folder-count">${f.count}</span>
+    </div>
+  `).join('');
+
+  $('library-folders').querySelectorAll('.lib-folder').forEach(el => {
+    el.onclick = () => {
+      librarySelectedFolder = el.dataset.folder;
+      renderLibraryFolders();
+      renderLibraryGrid();
+    };
+  });
+}
+
+function renderLibraryGrid() {
+  const filtered = libraryItems.filter(it => {
+    if (librarySelectedFolder === '__all__') return true;
+    if (librarySelectedFolder === '__none__') return !it.folder;
+    return it.folder === librarySelectedFolder;
+  });
+
+  if (filtered.length === 0) {
+    $('library-grid').innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--ink-low); padding:40px;">No images in this folder.</div>`;
+    return;
+  }
+
+  $('library-grid').innerHTML = filtered.map(it => `
     <div class="lib-item" data-path="${it.image_path}" data-id="${it.id}" style="position:relative; cursor:pointer; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:var(--panel-2);">
       <img src="${publicInputUrl(it.image_path)}" loading="lazy" style="width:100%; aspect-ratio:1/1; object-fit:cover; display:block;">
       <div style="padding:6px 8px; font-size:11px;">
         <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escape(it.label || it.image_path)}">${escape(it.label || (it.image_path.split('-').slice(1).join('-') || 'image'))}</div>
-        <div style="display:flex; gap:6px; margin-top:6px;">
+        ${it.folder ? `<div style="font-size:10px; color:var(--ink-low); margin-top:2px;">📁 ${escape(it.folder)}</div>` : ''}
+        <div style="display:flex; gap:4px; margin-top:6px; flex-wrap:wrap;">
           <button class="btn small" data-act="lib-add" data-path="${it.image_path}" data-label="${escape(it.label || '')}" style="flex:1; padding:3px 6px; font-size:10px;">Add</button>
-          <button class="btn ghost small" data-act="lib-rename" data-id="${it.id}" data-label="${escape(it.label || '')}" style="padding:3px 6px; font-size:10px;">✎</button>
-          <button class="btn ghost small" data-act="lib-del" data-id="${it.id}" style="padding:3px 6px; font-size:10px; color:var(--danger);">×</button>
+          <button class="btn ghost small" data-act="lib-folder" data-id="${it.id}" data-folder="${escape(it.folder || '')}" style="padding:3px 6px; font-size:10px;" title="Move to folder">📁</button>
+          <button class="btn ghost small" data-act="lib-rename" data-id="${it.id}" data-label="${escape(it.label || '')}" style="padding:3px 6px; font-size:10px;" title="Rename">✎</button>
+          <button class="btn ghost small" data-act="lib-del" data-id="${it.id}" style="padding:3px 6px; font-size:10px; color:var(--danger);" title="Remove from library">×</button>
         </div>
       </div>
     </div>
@@ -756,7 +839,6 @@ async function openLibrary() {
       e.stopPropagation();
       const path = b.dataset.path;
       const label = b.dataset.label;
-      // Skip if already in current refImages
       if (refImages.some(r => r.kind === 'sticky' && r.path === path)) {
         alert('Already in your job');
         return;
@@ -767,7 +849,19 @@ async function openLibrary() {
       });
       saveRefImagesToStorage();
       renderRefImages();
-      // Don't close — user might want to add multiple
+    };
+  });
+  $('library-grid').querySelectorAll('[data-act="lib-folder"]').forEach(b => {
+    b.onclick = async (e) => {
+      e.stopPropagation();
+      const id = b.dataset.id;
+      const current = b.dataset.folder || '';
+      const newFolder = prompt('Move to folder (leave empty for top-level):', current);
+      if (newFolder === null) return;
+      const value = newFolder.trim() || null;
+      const { error } = await sb.from('library_images').update({ folder: value }).eq('id', id);
+      if (error) { alert(error.message); return; }
+      openLibrary();
     };
   });
   $('library-grid').querySelectorAll('[data-act="lib-rename"]').forEach(b => {
@@ -798,10 +892,16 @@ async function saveToLibrary(path, defaultLabel) {
   if (existing) { alert('Already in library'); return; }
   const label = prompt('Label this image (optional):', defaultLabel || '');
   if (label === null) return;
-  const { error } = await sb.from('library_images').insert({ image_path: path, label: label.trim() });
+  const folder = prompt('Folder (optional, e.g. "coffee"):', '');
+  if (folder === null) return;  // user clicked Cancel — abort whole save
+  const { error } = await sb.from('library_images').insert({
+    image_path: path,
+    label: label.trim(),
+    folder: folder.trim() || null,
+  });
   if (error) { alert(error.message); return; }
   alert('Saved to library');
-  renderRefImages();  // update UI in case the row had a "save" indicator
+  renderRefImages();
 }
 
 // Compose the auto-prepended prompt for multi-image jobs.
