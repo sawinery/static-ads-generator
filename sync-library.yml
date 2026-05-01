@@ -1,0 +1,37 @@
+name: Sync library images to Supabase
+
+# Whenever files change under /library/ on main, mirror them into the
+# Supabase 'ad-inputs' bucket and add rows to public.library_images so
+# they appear in the app's image library.
+#
+# REQUIRED GITHUB SECRETS (set in repo Settings → Secrets and variables → Actions):
+#   SUPABASE_URL          – e.g. https://xxxxx.supabase.co
+#   SUPABASE_SERVICE_KEY  – service-role key (the secret one, NOT anon)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'library/**'
+  workflow_dispatch:  # allow manual run from the Actions tab
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: npm install --no-save @supabase/supabase-js@2.45.0
+
+      - name: Sync library/ to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node .github/scripts/sync-library.mjs
