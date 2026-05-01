@@ -216,6 +216,17 @@
   .lightbox .close { position:absolute; top:16px; right:20px; color:var(--ink); background:transparent; border:0; font-size:28px; cursor:pointer; line-height:1; }
   .ad .body { padding:10px 12px; border-top:1px solid var(--line); }
   .ad .body .prompt { font-size:12px; color:var(--ink-dim); display:-webkit-box; -webkit-line-clamp:6; -webkit-box-orient:vertical; overflow:hidden; min-height:34px; cursor:pointer; transition:all 0.2s; }
+  .ad .body .display-name-row {
+    margin-bottom:6px;
+  }
+  .ad .body .display-name-input {
+    width:100%; padding:3px 6px; font-size:12.5px; font-weight:600; color:var(--ink);
+    background:transparent; border:1px solid transparent; border-radius:3px;
+    font-family:inherit;
+  }
+  .ad .body .display-name-input:placeholder-shown { color:var(--ink-low); font-weight:400; font-style:italic; }
+  .ad .body .display-name-input:hover { border-color:var(--line); }
+  .ad .body .display-name-input:focus { border-color:var(--accent); background:var(--panel-2); outline:none; }
   .ad .body .prompt.expanded { -webkit-line-clamp:unset; max-height:none; display:block; }
   .ad .body .prompt:hover { color:var(--ink); }
   .ad .body .prompt .final-prompt-section {
@@ -359,6 +370,7 @@
   <section class="pane-right">
     <div class="toolbar">
       <div class="tabs" id="tabs"><!-- populated dynamically --></div>
+      <button class="btn ghost small" id="download-collection" style="display:none" title="Download every ad in this collection (all aspects)">⬇ Download collection</button>
       <button class="btn ghost small" id="refresh">Refresh</button>
       <div class="stats" id="stats">—</div>
     </div>
@@ -1163,7 +1175,93 @@ function renderTabs() {
     if (error) { alert(error.message); return; }
     switchTab({ kind: 'collection', id: data.id, name: data.name });
   };
+
+  // Show "Download collection" only when on a collection tab
+  $('download-collection').style.display = currentTab.kind === 'collection' ? '' : 'none';
 }
+
+async function downloadCurrentCollection() {
+  if (currentTab.kind !== 'collection') return;
+  const colId = currentTab.id;
+  const colName = currentTab.name;
+
+  // 1. Get all variant IDs in this collection
+  const { data: links, error: lerr } = await sb
+    .from('variant_collections')
+    .select('variant_id')
+    .eq('collection_id', colId);
+  if (lerr) { alert(lerr.message); return; }
+  const ids = (links ?? []).map(l => l.variant_id);
+  if (!ids.length) { alert('Collection is empty'); return; }
+
+  // 2. Fetch all those variants (with their parent jobs for naming)
+  const { data: variants, error: vErr } = await sb
+    .from('variants')
+    .select('*, jobs(prompt, variations)')
+    .in('id', ids);
+  if (vErr) { alert(vErr.message); return; }
+
+  // 3. For each variant, ALSO find its reformat children (so we download
+  //    every aspect, not just the canonical one in the collection).
+  const { data: reformatChildren } = await sb
+    .from('variants')
+    .select('*')
+    .in('parent_variant_id', ids)
+    .eq('status', 'completed');
+
+  // Group reformats by parent
+  const reformatsByParent = {};
+  for (const r of (reformatChildren ?? [])) {
+    // Reformats = different aspect from the parent. We need parent's aspect to
+    // distinguish. Use the variants we already fetched.
+    const parent = (variants ?? []).find(v => v.id === r.parent_variant_id);
+    if (!parent) continue;
+    if (r.aspect === parent.aspect) continue; // edit/reuse, not a reformat
+    if (!reformatsByParent[parent.id]) reformatsByParent[parent.id] = {};
+    if (!reformatsByParent[parent.id][r.aspect]) {
+      reformatsByParent[parent.id][r.aspect] = r;
+    }
+  }
+
+  // 4. Build flat list of {variant, syntheticForReformat} pairs to download
+  const queue = [];
+  for (const v of (variants ?? [])) {
+    if (v.status !== 'completed' || !v.output_path) continue;
+    const decorated = { ...v, jobs_variations: v.jobs?.variations ?? 1 };
+    queue.push(decorated);
+    const refs = reformatsByParent[v.id];
+    if (refs) {
+      for (const aspect of Object.keys(refs)) {
+        const r = refs[aspect];
+        queue.push({
+          ...r,
+          jobs: v.jobs,
+          jobs_variations: v.jobs?.variations ?? 1,
+          _inherited_display_name: v.display_name,
+        });
+      }
+    }
+  }
+
+  if (!queue.length) { alert('No completed ads in this collection'); return; }
+  if (!confirm(`Download ${queue.length} files from "${colName}"?\n\nYour browser may ask permission to download multiple files.`)) return;
+
+  // 5. Stagger downloads. Browsers throttle/block when too many fire at once.
+  const btn = $('download-collection');
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  for (let i = 0; i < queue.length; i++) {
+    btn.textContent = `Downloading ${i+1}/${queue.length}…`;
+    await download(queue[i]);
+    if (i < queue.length - 1) {
+      await new Promise(r => setTimeout(r, 300));
+    }
+  }
+  btn.textContent = originalLabel;
+  btn.disabled = false;
+}
+
+$('download-collection').onclick = downloadCurrentCollection;
 
 function switchTab(tab) {
   currentTab = tab;
@@ -1205,6 +1303,35 @@ function render() {
     `${offset + 1}–${offset + allVariants.length} of ${totalForTab} · ${done} done · ${pending} in-flight · total spent $${totalAllCost.toFixed(4)}`;
 
   wrap.innerHTML = allVariants.map(v => renderAd(v)).join('');
+
+  // wire display_name editing — saves on Enter or blur
+  wrap.querySelectorAll('.display-name-input').forEach(el => {
+    let originalValue = el.value;
+    const save = async () => {
+      const newValue = el.value.trim();
+      if (newValue === originalValue) return;
+      const id = el.dataset.nameId;
+      const { error } = await sb.from('variants')
+        .update({ display_name: newValue || null })
+        .eq('id', id);
+      if (error) {
+        alert('failed to save name: ' + error.message);
+        el.value = originalValue;
+        return;
+      }
+      // Update local cache so subsequent downloads use the new name
+      const v = allVariants.find(x => x.id === id);
+      if (v) v.display_name = newValue || null;
+      originalValue = newValue;
+    };
+    el.addEventListener('blur', save);
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+      if (e.key === 'Escape') { el.value = originalValue; el.blur(); }
+    });
+    // Don't bubble clicks (prevents card-level handlers from firing)
+    el.addEventListener('click', e => e.stopPropagation());
+  });
 
   // wire actions
   wrap.querySelectorAll('[data-act="download"]').forEach(b => {
@@ -1364,6 +1491,12 @@ function renderAd(v) {
         ${thumb}
       </div>
       <div class="body">
+        <div class="display-name-row">
+          <input type="text" class="display-name-input" data-name-id="${v.id}"
+            value="${escape(v.display_name || '')}"
+            placeholder="Click to name this ad…"
+            maxlength="60">
+        </div>
         <div class="prompt" title="Click to expand">${promptDisplay(v, j)}</div>
         <div class="meta-row">
           <span class="seq"><strong>#${v.seq ?? '—'}</strong>${fromLink}</span>
@@ -1485,17 +1618,25 @@ function slugify(s) {
 }
 
 function buildFilename(variant) {
-  // Pick the most-meaningful prompt for naming:
-  // - For reformats (auto-generated "Recreate this ad..." edit_prompt), use the parent job's prompt
-  // - For real edits/reuses, use the variant's own edit_prompt
-  // - Otherwise fall back to the job prompt
-  let promptForName;
-  if (variant.edit_prompt && !isAutoReformatPrompt(variant.edit_prompt)) {
-    promptForName = variant.edit_prompt;
+  // Priority for the filename "base":
+  //   1. variant.display_name (user-set custom name on this variant)
+  //   2. variant._inherited_display_name (set on synthetic reformats so they
+  //      inherit the parent's custom name when downloaded together)
+  //   3. headline extracted from a meaningful prompt
+  let base;
+  if (variant.display_name && variant.display_name.trim()) {
+    base = slugify(variant.display_name.trim());
+  } else if (variant._inherited_display_name && variant._inherited_display_name.trim()) {
+    base = slugify(variant._inherited_display_name.trim());
   } else {
-    promptForName = variant.jobs?.prompt || '';
+    let promptForName;
+    if (variant.edit_prompt && !isAutoReformatPrompt(variant.edit_prompt)) {
+      promptForName = variant.edit_prompt;
+    } else {
+      promptForName = variant.jobs?.prompt || '';
+    }
+    base = slugify(extractHeadline(promptForName));
   }
-  const base = slugify(extractHeadline(promptForName));
   const aspect = aspectSlug(variant.aspect);
   const totalVars = variant.jobs_variations ?? 1;
   const vSuffix = (totalVars > 1 && variant.variation_index)
@@ -1532,11 +1673,13 @@ async function downloadAll(v) {
       const r = v.reformats[aspect];
       if (r && r.status === 'completed' && r.output_path) {
         // Build a synthetic variant-like object for the reformat using the
-        // same headline as the parent. The reformat's aspect is its own.
+        // same headline (or display_name) as the parent. The reformat's
+        // aspect is its own.
         const synthetic = {
           ...r,
-          jobs: v.jobs,                   // share parent's prompt for naming
+          jobs: v.jobs,
           jobs_variations: v.jobs_variations,
+          _inherited_display_name: v.display_name,  // inherit parent's custom name
         };
         await new Promise(r => setTimeout(r, 250));
         await download(synthetic);
