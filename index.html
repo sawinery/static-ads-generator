@@ -501,6 +501,8 @@
       <div class="tabs" id="tabs"><!-- populated dynamically --></div>
       <button class="btn ghost small" id="download-collection" style="display:none" title="Download every ad in this collection (all aspects)">⬇ Download collection</button>
       <button class="btn ghost small" id="refresh">Refresh</button>
+      <button class="btn ghost small" id="stop-all" title="Cancel all pending and in-flight generations" style="color:var(--danger);">⏹ Stop all</button>
+      <button class="btn ghost small" id="clean-failed" title="Delete all failed / cancelled variants" style="color:var(--danger);">🗑 Clean failed</button>
       <div class="stats" id="stats">—</div>
     </div>
     <div id="ads" class="grid"></div>
@@ -1589,6 +1591,62 @@ let variantMembership = {};        // variant_id -> Set<collection_id>
 
 // ---- refresh ----
 $('refresh').onclick = () => refresh(true);
+
+$('stop-all').onclick = async () => {
+  if (!sb) return;
+  // Count first so the confirm message is informative
+  const { count } = await sb.from('variants')
+    .select('*', { count: 'exact', head: true })
+    .in('status', ['pending', 'processing']);
+  if (!count) { alert('No pending or in-flight generations.'); return; }
+  if (!confirm(`Cancel ${count} pending/in-flight generation${count === 1 ? '' : 's'}?\n\nNote: anything currently mid-OpenAI-call will still complete, but won't be queued further.`)) return;
+
+  const btn = $('stop-all');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = 'Stopping…';
+  try {
+    const { error } = await sb.from('variants')
+      .update({ status: 'failed', error: 'cancelled by user' })
+      .in('status', ['pending', 'processing']);
+    if (error) throw new Error(error.message);
+    await refresh(true);
+  } catch (e) {
+    alert('Stop failed: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+};
+
+$('clean-failed').onclick = async () => {
+  if (!sb) return;
+  const { count } = await sb.from('variants')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'failed');
+  if (!count) { alert('No failed variants to clean.'); return; }
+  if (!confirm(`Delete ${count} failed variant${count === 1 ? '' : 's'} permanently?\n\nThis can't be undone. Storage objects (if any) will also be removed when the row is deleted.`)) return;
+
+  const btn = $('clean-failed');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = 'Cleaning…';
+  try {
+    // Delete the variant rows. The cascade-on-delete on collections + storage
+    // garbage stay alone — but failed variants typically have no output_path
+    // anyway, so storage isn't really at risk here.
+    const { error } = await sb.from('variants')
+      .delete()
+      .eq('status', 'failed');
+    if (error) throw new Error(error.message);
+    await refresh(true);
+  } catch (e) {
+    alert('Clean failed: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+};
 
 async function refresh(userInitiated = false) {
   if (!sb) return;
