@@ -312,6 +312,38 @@
   .modal h3 { margin:0 0 14px; font-size:14px; }
 
   .empty { color:var(--ink-low); font-family:var(--mono); font-size:12px; padding:40px; text-align:center; }
+
+  .queue-status {
+    margin:8px 0 12px;
+    padding:10px 14px;
+    border:1px solid var(--accent);
+    border-radius:var(--radius);
+    background:rgba(46, 204, 113, 0.06);
+    display:flex; align-items:center; gap:14px;
+    font-size:12.5px;
+  }
+  .queue-status .qs-dot {
+    width:8px; height:8px; border-radius:50%;
+    background:var(--accent);
+    box-shadow:0 0 0 0 var(--accent);
+    animation:qs-pulse 1.6s infinite;
+    flex-shrink:0;
+  }
+  @keyframes qs-pulse {
+    0%   { box-shadow:0 0 0 0 rgba(46, 204, 113, 0.55); }
+    70%  { box-shadow:0 0 0 8px rgba(46, 204, 113, 0); }
+    100% { box-shadow:0 0 0 0 rgba(46, 204, 113, 0); }
+  }
+  .queue-status .qs-counts { color:var(--ink); }
+  .queue-status .qs-counts strong { color:var(--accent); font-weight:700; }
+  .queue-status .qs-eta { color:var(--ink-dim); margin-left:auto; font-family:var(--mono); font-size:11.5px; }
+  .queue-status .qs-bar {
+    flex:1; max-width:280px; height:4px; border-radius:2px;
+    background:var(--panel-2); overflow:hidden;
+  }
+  .queue-status .qs-bar-fill {
+    height:100%; background:var(--accent); transition:width 0.4s ease;
+  }
   .err { color:var(--danger); font-family:var(--mono); font-size:11px; margin-top:6px; }
   .hint { color:var(--ink-low); font-size:11.5px; margin-top:4px; }
 </style>
@@ -505,6 +537,7 @@
       <button class="btn ghost small" id="clean-failed" title="Delete all failed / cancelled variants" style="color:var(--danger);">🗑 Clean failed</button>
       <div class="stats" id="stats">—</div>
     </div>
+    <div id="queue-status" class="queue-status" style="display:none;"></div>
     <div id="ads" class="grid"></div>
     <div id="empty" class="empty" style="display:none">No ads yet. Submit a job on the left.</div>
     <div id="pager" class="pager" style="display:none"></div>
@@ -1671,6 +1704,9 @@ async function refresh(userInitiated = false) {
     }
   } catch (e) { console.warn('cost sum failed:', e); }
 
+  // Global queue counters + sample of recent completion times for ETA.
+  await refreshQueueStatus();
+
   // Get per-collection counts in one query
   if (collections.length) {
     const { data: countData } = await sb
@@ -1960,6 +1996,92 @@ function switchTab(tab) {
   currentTab = tab;
   currentPage = 0;
   refresh(true);
+}
+
+// ---- queue status / ETA ----
+//
+// Shows a small strip when there's pending or in-flight work, with a live
+// counter and an ETA based on the median completion time of the most recent
+// 20 completed variants. Median is more robust than mean against outliers
+// (very fast first-of-batch, very slow retries).
+
+async function refreshQueueStatus() {
+  const strip = $('queue-status');
+  if (!sb) { strip.style.display = 'none'; return; }
+
+  // Counts in parallel
+  const [pendRes, procRes, doneRes] = await Promise.all([
+    sb.from('variants').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+    sb.from('variants').select('*', { count: 'exact', head: true }).eq('status', 'processing'),
+    sb.from('variants').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
+  ]);
+  const pending    = pendRes.count ?? 0;
+  const processing = procRes.count ?? 0;
+  const completed  = doneRes.count ?? 0;
+  const inflight   = pending + processing;
+
+  if (inflight === 0) {
+    strip.style.display = 'none';
+    return;
+  }
+
+  // Sample recent completed variants to estimate per-variant duration.
+  // updated_at - created_at gives the queue+processing time, which is the
+  // honest end-to-end signal for how long a new variant will take.
+  let medianSeconds = 60; // fallback if we can't sample
+  try {
+    const { data: recent } = await sb
+      .from('variants')
+      .select('created_at, updated_at')
+      .eq('status', 'completed')
+      .order('updated_at', { ascending: false })
+      .limit(20);
+    if (recent && recent.length) {
+      const durations = recent
+        .map(r => (new Date(r.updated_at).getTime() - new Date(r.created_at).getTime()) / 1000)
+        .filter(d => d > 0 && d < 600);  // sanity: drop anything > 10min
+      if (durations.length) {
+        durations.sort((a, b) => a - b);
+        medianSeconds = durations[Math.floor(durations.length / 2)];
+      }
+    }
+  } catch (e) { /* ignore — fallback used */ }
+
+  // Worker is single-concurrency (one OpenAI call at a time per Edge Function
+  // invocation), so total time ≈ pending × median. Add a small buffer for the
+  // currently-processing one if any.
+  const etaSec = Math.round(inflight * medianSeconds);
+  const etaText = formatETA(etaSec);
+
+  // Progress bar: how far through this batch are we?
+  // We use the size of the last batch as a baseline. Without that, fall back
+  // to a simple "processing now" indicator.
+  const total = inflight + Math.min(completed, 50); // recent context
+  const pct = total > 0 ? Math.round((Math.min(completed, 50) / total) * 100) : 0;
+
+  strip.style.display = 'flex';
+  strip.innerHTML = `
+    <div class="qs-dot"></div>
+    <div class="qs-counts">
+      <strong>${inflight}</strong> generating
+      <span style="color:var(--ink-low);">·</span>
+      ${processing > 0 ? `<span style="color:var(--ink-dim);">${processing} active, ${pending} queued</span>` : `<span style="color:var(--ink-dim);">${pending} queued</span>`}
+    </div>
+    <div class="qs-bar"><div class="qs-bar-fill" style="width:${pct}%"></div></div>
+    <div class="qs-eta">~${etaText} remaining · ${Math.round(medianSeconds)}s/img</div>
+  `;
+}
+
+function formatETA(sec) {
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  }
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
 function render() {
@@ -2718,15 +2840,16 @@ $('derive-submit').onclick = async () => {
   }
 };
 
-// ---- smart polling: only refresh when there's pending/processing work ----
-// When everything is settled, no polling. When something is in-flight, poll
-// every 15s. Reduces visual flicker and unnecessary network calls.
+// ---- smart polling: refresh when there's pending/processing work anywhere ----
+// When everything is settled, no polling. When something is in-flight (either
+// on the current page or globally — the queue strip can be showing batches
+// from off-page jobs), poll every 15s.
 setInterval(() => {
   if (document.hidden) return;
   if (!sb) return;
-  // Only poll if at least one variant on the current page is in-flight
-  const inFlight = allVariants.some(v => v.status === 'pending' || v.status === 'processing');
-  if (inFlight) refresh(false);
+  const onPage = allVariants.some(v => v.status === 'pending' || v.status === 'processing');
+  const stripVisible = $('queue-status').style.display === 'flex';
+  if (onPage || stripVisible) refresh(false);
 }, 15000);
 
 // ---- prompt templates (DB-driven, editable via "Manage" modal) ----
