@@ -182,6 +182,38 @@
   .lib-folder .lib-folder-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .lib-folder .lib-folder-count { font-family:var(--mono); font-size:10px; opacity:0.7; }
 
+  /* library image cell */
+  .lib-item {
+    display:flex; flex-direction:column;
+    border:1px solid var(--line); border-radius:var(--radius);
+    background:var(--panel-2); overflow:hidden;
+  }
+  .lib-item .lib-thumb {
+    width:100%; aspect-ratio:1/1; background:var(--bg);
+    display:block; flex-shrink:0;
+  }
+  .lib-item .lib-thumb img {
+    width:100%; height:100%; object-fit:cover; display:block;
+  }
+  .lib-item .lib-meta {
+    padding:6px 8px; display:flex; flex-direction:column; gap:4px;
+    font-size:11px;
+  }
+  .lib-item .lib-label {
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink);
+  }
+  .lib-item .lib-folder-tag {
+    font-size:10px; color:var(--ink-low);
+  }
+  .lib-item .lib-actions {
+    display:flex; gap:4px; margin-top:2px;
+  }
+  .lib-item .lib-actions .btn {
+    padding:4px 6px; font-size:10px; line-height:1;
+  }
+  .lib-item .lib-actions [data-act="lib-add"] { flex:1; }
+  .lib-item .lib-actions [data-act="lib-del"] { color:var(--danger); }
+
   /* popover (collection picker) */
   .popover-bg {
     position:fixed; inset:0; z-index:55; background:transparent;
@@ -838,16 +870,18 @@ function renderLibraryGrid() {
   $('library-grid').scrollTop = 0;
 
   $('library-grid').innerHTML = pageItems.map(it => `
-    <div class="lib-item" data-path="${it.image_path}" data-id="${it.id}" style="position:relative; cursor:pointer; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:var(--panel-2);">
-      <img src="${publicInputUrl(it.image_path)}" loading="lazy" style="width:100%; aspect-ratio:1/1; object-fit:cover; display:block;">
-      <div style="padding:6px 8px; font-size:11px;">
-        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escape(it.label || it.image_path)}">${escape(it.label || (it.image_path.split('-').slice(1).join('-') || 'image'))}</div>
-        ${it.folder ? `<div style="font-size:10px; color:var(--ink-low); margin-top:2px;">📁 ${escape(it.folder)}</div>` : ''}
-        <div style="display:flex; gap:4px; margin-top:6px; flex-wrap:wrap;">
-          <button class="btn small" data-act="lib-add" data-path="${it.image_path}" data-label="${escape(it.label || '')}" style="flex:1; padding:3px 6px; font-size:10px;">Add</button>
-          <button class="btn ghost small" data-act="lib-folder" data-id="${it.id}" data-folder="${escape(it.folder || '')}" style="padding:3px 6px; font-size:10px;" title="Move to folder">📁</button>
-          <button class="btn ghost small" data-act="lib-rename" data-id="${it.id}" data-label="${escape(it.label || '')}" style="padding:3px 6px; font-size:10px;" title="Rename">✎</button>
-          <button class="btn ghost small" data-act="lib-del" data-id="${it.id}" style="padding:3px 6px; font-size:10px; color:var(--danger);" title="Remove from library">×</button>
+    <div class="lib-item" data-path="${it.image_path}" data-id="${it.id}">
+      <div class="lib-thumb">
+        <img src="${publicInputUrl(it.image_path)}" loading="lazy" alt="">
+      </div>
+      <div class="lib-meta">
+        <div class="lib-label" title="${escape(it.label || it.image_path)}">${escape(it.label || (it.image_path.split('-').slice(1).join('-') || 'image'))}</div>
+        ${it.folder ? `<div class="lib-folder-tag">📁 ${escape(it.folder)}</div>` : ''}
+        <div class="lib-actions">
+          <button class="btn small" data-act="lib-add" data-path="${it.image_path}" data-label="${escape(it.label || '')}">Add</button>
+          <button class="btn ghost small" data-act="lib-folder" data-id="${it.id}" data-folder="${escape(it.folder || '')}" title="Move to folder">📁</button>
+          <button class="btn ghost small" data-act="lib-rename" data-id="${it.id}" data-label="${escape(it.label || '')}" title="Rename">✎</button>
+          <button class="btn ghost small" data-act="lib-del" data-id="${it.id}" title="Remove from library">×</button>
         </div>
       </div>
     </div>
