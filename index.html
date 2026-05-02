@@ -407,6 +407,92 @@
       <button class="btn" id="submit-one" style="width:100%; margin-top:10px">Submit job</button>
       <div class="err" id="submit-err"></div>
     </div>
+
+    <div class="card">
+      <details id="batch-details">
+        <summary style="cursor:pointer; user-select:none; list-style:none;">
+          <h2 style="display:inline-block; margin:0;">Batch import</h2>
+          <span class="hint" style="margin-left:6px;">Paste many prompts at once — open ▾</span>
+        </summary>
+
+        <div style="margin-top:14px;">
+          <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+            <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink); margin:0;">
+              <input type="radio" name="batch-mode" id="batch-mode-text" value="text" checked> Plain text
+            </label>
+            <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink); margin:0;">
+              <input type="radio" name="batch-mode" id="batch-mode-json" value="json"> JSON (advanced)
+            </label>
+            <span style="flex:1"></span>
+            <button class="btn ghost small" id="batch-helper-btn" title="Get a system prompt for ChatGPT/Claude that produces import-ready output">📋 Get LLM helper</button>
+          </div>
+
+          <div id="batch-text-mode">
+            <label>Prompts (separate each with a line of <code style="font-size:11px;">---</code>)</label>
+            <textarea id="batch-text" placeholder="First ad prompt here.&#10;Can be multiple lines.&#10;---&#10;Second ad prompt.&#10;Also multi-line.&#10;---&#10;Third ad..." style="min-height:240px;"></textarea>
+            <div class="hint">Settings below apply to all prompts in the batch.</div>
+          </div>
+
+          <div id="batch-json-mode" style="display:none;">
+            <label>JSON array</label>
+            <textarea id="batch-json" placeholder='[
+  {
+    "prompt": "First ad...",
+    "aspect": "9:16",
+    "quality": "medium",
+    "variations": 1,
+    "display_name": "warehouse-summer-1"
+  },
+  {
+    "prompt": "Second ad...",
+    "aspects": ["9:16", "1:1"],
+    "quality": "high"
+  }
+]' style="min-height:240px; font-family:var(--mono); font-size:11px;"></textarea>
+            <div class="hint">Each object: required <code style="font-size:11px;">prompt</code>; optional <code style="font-size:11px;">aspect</code> or <code style="font-size:11px;">aspects</code>, <code style="font-size:11px;">quality</code>, <code style="font-size:11px;">variations</code>, <code style="font-size:11px;">safe_zones</code>, <code style="font-size:11px;">display_name</code>. Settings below are defaults.</div>
+          </div>
+
+          <label style="margin-top:10px">Default aspect ratios (used unless overridden)</label>
+          <div style="display:flex; gap:14px; padding:6px 0; flex-wrap:wrap;">
+            <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
+              <input type="checkbox" id="batch-asp-9-16" checked> 9:16
+            </label>
+            <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
+              <input type="checkbox" id="batch-asp-1-1"> 1:1
+            </label>
+            <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
+              <input type="checkbox" id="batch-asp-16-9"> 16:9
+            </label>
+          </div>
+
+          <div class="row" style="margin-top:10px">
+            <div>
+              <label>Default quality</label>
+              <select id="batch-quality">
+                <option value="low">low (~$0.005)</option>
+                <option value="medium" selected>medium (~$0.041)</option>
+                <option value="high">high (~$0.190)</option>
+              </select>
+            </div>
+            <div>
+              <label>Default variations</label>
+              <input type="number" id="batch-variations" min="1" max="4" value="1">
+            </div>
+          </div>
+
+          <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink); margin-top:10px;">
+            <input type="checkbox" id="batch-safe-zones"> Apply Meta safe zones (default)
+          </label>
+
+          <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink); margin-top:8px;">
+            <input type="checkbox" id="batch-use-refs" checked> Apply the reference images from the form above to every prompt
+          </label>
+
+          <button class="btn" id="batch-preview-btn" style="width:100%; margin-top:12px;">Preview & submit</button>
+          <div class="err" id="batch-err"></div>
+        </div>
+      </details>
+    </div>
   </section>
 
   <!-- RIGHT: jobs list -->
@@ -437,6 +523,33 @@
 <!-- "from #X" parent peek modal -->
 <!-- prompt preview modal (shown when submitting with multi-image jobs) -->
 <!-- image library modal -->
+<!-- batch import preview modal -->
+<div class="modal-bg" id="batch-preview-modal">
+  <div class="modal" style="width:min(720px, 92vw); max-height:85vh; display:flex; flex-direction:column;">
+    <h3 style="margin:0 0 4px;">Batch preview</h3>
+    <div id="batch-preview-summary" class="hint" style="margin-top:0;"></div>
+    <div id="batch-preview-list" style="overflow:auto; flex:1; margin-top:10px; border:1px solid var(--line); border-radius:var(--radius); padding:8px;"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost" id="batch-preview-cancel">Back</button>
+      <button class="btn" id="batch-preview-submit">Submit batch</button>
+    </div>
+    <div class="err" id="batch-preview-err"></div>
+  </div>
+</div>
+
+<!-- LLM helper modal -->
+<div class="modal-bg" id="batch-helper-modal">
+  <div class="modal" style="width:min(720px, 92vw); max-height:85vh; display:flex; flex-direction:column;">
+    <h3 style="margin:0 0 4px;">Generate prompts with ChatGPT or Claude</h3>
+    <p class="hint" style="margin-top:0;">Fill in your brief at the top, then copy the entire text below and paste into ChatGPT/Claude. The model will return prompts in a format this tool can ingest. Paste the result back into the Batch import textarea.</p>
+    <textarea id="batch-helper-text" style="flex:1; min-height:380px; font-family:var(--mono); font-size:11.5px;"></textarea>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost" id="batch-helper-close">Close</button>
+      <button class="btn" id="batch-helper-copy">Copy to clipboard</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="library-modal">
   <div class="modal" style="width:min(900px, 94vw); padding:0; max-height:85vh; display:flex; flex-direction:column;">
     <div style="padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px;">
@@ -1114,6 +1227,353 @@ $('preview-submit').onclick = async () => {
   } finally {
     btn.disabled = false; btn.textContent = 'Submit job';
   }
+};
+
+// ============================================================================
+// Batch import (paste many prompts at once)
+// ============================================================================
+//
+// Two input modes:
+//   - text: prompts separated by `---` lines on their own. Settings come from
+//     the form (default aspect, quality, variations, safe_zones).
+//   - json: array of { prompt, aspect|aspects, quality, variations, safe_zones,
+//     display_name }. Form settings serve as defaults for missing fields.
+//
+// Parsed → previewed → user confirms → jobs inserted (one per prompt).
+// Reference images from the Single Ad form can optionally apply to all.
+
+// Mode toggle
+document.querySelectorAll('input[name="batch-mode"]').forEach(r => {
+  r.onchange = () => {
+    const mode = document.querySelector('input[name="batch-mode"]:checked').value;
+    $('batch-text-mode').style.display = mode === 'text' ? '' : 'none';
+    $('batch-json-mode').style.display = mode === 'json' ? '' : 'none';
+  };
+});
+
+// Parsing — returns array of { prompt, aspects, quality, variations, safe_zones, display_name }
+// or throws an Error with a human-readable message.
+function parseBatchInput() {
+  const mode = document.querySelector('input[name="batch-mode"]:checked').value;
+
+  // Defaults from the batch-card form
+  const defaultAspects = [];
+  if ($('batch-asp-9-16').checked) defaultAspects.push('9:16');
+  if ($('batch-asp-1-1').checked)  defaultAspects.push('1:1');
+  if ($('batch-asp-16-9').checked) defaultAspects.push('16:9');
+  if (!defaultAspects.length) throw new Error('Pick at least one default aspect ratio.');
+
+  const defaults = {
+    aspects:    defaultAspects,
+    quality:    $('batch-quality').value,
+    variations: parseInt($('batch-variations').value, 10) || 1,
+    safe_zones: $('batch-safe-zones').checked,
+  };
+
+  if (mode === 'text') {
+    const raw = $('batch-text').value;
+    if (!raw.trim()) throw new Error('Batch is empty.');
+    const items = raw
+      .split(/^\s*---\s*$/m)        // split on a line that's exactly `---`
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (!items.length) throw new Error('No prompts found. Separate prompts with a line of `---`.');
+    return items.map(prompt => ({ prompt, ...defaults }));
+  }
+
+  // JSON mode
+  const raw = $('batch-json').value.trim();
+  if (!raw) throw new Error('JSON is empty.');
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch (e) { throw new Error('Invalid JSON: ' + e.message); }
+  if (!Array.isArray(parsed)) throw new Error('Top-level JSON must be an array.');
+  if (!parsed.length) throw new Error('JSON array is empty.');
+
+  const VALID_ASPECTS = ['9:16', '1:1', '16:9'];
+  const VALID_QUALITY = ['low', 'medium', 'high'];
+
+  return parsed.map((row, i) => {
+    if (typeof row !== 'object' || !row) throw new Error(`Item ${i+1}: not an object`);
+    if (typeof row.prompt !== 'string' || !row.prompt.trim()) throw new Error(`Item ${i+1}: missing prompt`);
+    let aspects = row.aspects ?? (row.aspect ? [row.aspect] : null) ?? defaults.aspects;
+    if (!Array.isArray(aspects)) throw new Error(`Item ${i+1}: aspects must be an array`);
+    for (const a of aspects) if (!VALID_ASPECTS.includes(a)) throw new Error(`Item ${i+1}: invalid aspect "${a}"`);
+    const quality = row.quality ?? defaults.quality;
+    if (!VALID_QUALITY.includes(quality)) throw new Error(`Item ${i+1}: invalid quality "${quality}"`);
+    const variations = row.variations ?? defaults.variations;
+    if (!Number.isInteger(variations) || variations < 1 || variations > 4) throw new Error(`Item ${i+1}: variations must be 1–4`);
+    const safe_zones = row.safe_zones ?? defaults.safe_zones;
+    return {
+      prompt:      row.prompt.trim(),
+      aspects,
+      quality,
+      variations,
+      safe_zones,
+      display_name: row.display_name?.trim() || null,
+    };
+  });
+}
+
+function estimateCostFor(item) {
+  // Rough estimates per output. Edit-mode (with reference images) costs ~30%
+  // more due to input image tokens. The real cost is computed from API usage
+  // per variant after generation.
+  const PER_QUALITY = { low: 0.005, medium: 0.041, high: 0.190 };
+  const hasRefs = $('batch-use-refs').checked && refImages.length > 0;
+  const editMultiplier = hasRefs ? 1.3 : 1;
+  const perOutput = (PER_QUALITY[item.quality] ?? 0.041) * editMultiplier;
+  return perOutput * item.aspects.length * item.variations;
+}
+
+$('batch-preview-btn').onclick = () => {
+  $('batch-err').textContent = '';
+  if (!sb) { $('batch-err').textContent = 'connect first'; return; }
+  let items;
+  try {
+    items = parseBatchInput();
+  } catch (e) {
+    $('batch-err').textContent = e.message;
+    return;
+  }
+  // Open preview
+  const totalOutputs = items.reduce((s, it) => s + it.aspects.length * it.variations, 0);
+  const totalCost = items.reduce((s, it) => s + estimateCostFor(it), 0);
+
+  $('batch-preview-summary').innerHTML = `
+    <strong>${items.length}</strong> prompts → <strong>${totalOutputs}</strong> images total ·
+    estimated cost ~<strong>$${totalCost.toFixed(2)}</strong>
+    ${$('batch-use-refs').checked && refImages.length > 0 ? `· ${refImages.length} ref image(s) attached to each` : ''}
+  `;
+
+  $('batch-preview-list').innerHTML = items.map((it, i) => {
+    const promptPreview = it.prompt.length > 200 ? it.prompt.slice(0, 200) + '…' : it.prompt;
+    return `
+      <div style="padding:8px 10px; border-bottom:1px solid var(--line); font-size:12px;">
+        <div style="display:flex; gap:8px; align-items:flex-start;">
+          <div style="font-family:var(--mono); color:var(--ink-low); font-size:10px; min-width:30px;">${i+1}.</div>
+          <div style="flex:1; min-width:0;">
+            ${it.display_name ? `<div style="font-weight:600; color:var(--ink); margin-bottom:3px;">${escape(it.display_name)}</div>` : ''}
+            <div style="color:var(--ink-dim); white-space:pre-wrap; font-size:11.5px;">${escape(promptPreview)}</div>
+            <div style="margin-top:4px; display:flex; gap:6px; flex-wrap:wrap; font-family:var(--mono); font-size:10px; color:var(--ink-low);">
+              <span>${it.aspects.join(', ')}</span> ·
+              <span>${it.quality}</span> ·
+              <span>×${it.variations}</span>
+              ${it.safe_zones ? '· <span style="color:var(--accent)">safe zones</span>' : ''}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  $('batch-preview-err').textContent = '';
+  $('batch-preview-modal').classList.add('open');
+  // Stash items on the modal element for the submit handler
+  $('batch-preview-modal').dataset.items = JSON.stringify(items);
+};
+
+$('batch-preview-cancel').onclick = () => $('batch-preview-modal').classList.remove('open');
+
+$('batch-preview-submit').onclick = async () => {
+  const items = JSON.parse($('batch-preview-modal').dataset.items || '[]');
+  if (!items.length) { $('batch-preview-err').textContent = 'no items'; return; }
+
+  const btn = $('batch-preview-submit');
+  btn.disabled = true;
+  btn.textContent = 'Working…';
+
+  try {
+    // 1. If "apply ref images" is checked, upload any fresh images once and
+    //    promote them to sticky. Then use those paths for every job.
+    let refPathsForBatch = [];
+    if ($('batch-use-refs').checked && refImages.length > 0) {
+      btn.textContent = 'Uploading refs…';
+      for (let i = 0; i < refImages.length; i++) {
+        const r = refImages[i];
+        if (r.kind === 'fresh') {
+          const path = await uploadFreshImage(r.file, btn);
+          refImages[i] = { kind: 'sticky', path, name: r.file.name, role: r.role || 'reference' };
+          refPathsForBatch.push({ path, role: r.role || 'reference' });
+        } else {
+          refPathsForBatch.push({ path: r.path, role: r.role || 'reference' });
+        }
+      }
+      saveRefImagesToStorage();
+      renderRefImages();
+    }
+
+    // 2. Apply the prompt add-on (prepended) to every prompt. Same flow as
+    //    single-ad submit.
+    const addon = ($('addon').value || '').trim();
+
+    // 3. Insert jobs in batches. Supabase Postgres handles inserts well.
+    btn.textContent = `Submitting ${items.length} jobs…`;
+    const jobRows = items.map(it => ({
+      prompt:               addon ? `${addon}\n\n${it.prompt}` : it.prompt,
+      reference_image_path: refPathsForBatch.length === 1 ? refPathsForBatch[0].path : null,
+      quality:              it.quality,
+      aspects:              it.aspects,
+      variations:           it.variations,
+      safe_zones:           it.safe_zones,
+    }));
+
+    const { data: insertedJobs, error: jobErr } = await sb
+      .from('jobs')
+      .insert(jobRows)
+      .select('id');
+    if (jobErr) throw new Error('jobs insert: ' + jobErr.message);
+
+    // 4. If we have ref images, insert job_images rows for each new job.
+    if (refPathsForBatch.length > 0 && insertedJobs?.length) {
+      const jobImageRows = [];
+      for (const job of insertedJobs) {
+        refPathsForBatch.forEach((r, i) => {
+          jobImageRows.push({
+            job_id: job.id,
+            role: r.role,
+            image_path: r.path,
+            sort_order: i,
+          });
+        });
+      }
+      const { error: jiErr } = await sb.from('job_images').insert(jobImageRows);
+      if (jiErr) throw new Error('job_images: ' + jiErr.message);
+    }
+
+    // 5. If any items have a display_name, set it on the first variant of
+    //    each corresponding job (the trigger creates variants synchronously
+    //    on insert, so they exist by now).
+    const jobsWithNames = items
+      .map((it, i) => ({ name: it.display_name, jobId: insertedJobs[i]?.id }))
+      .filter(x => x.name && x.jobId);
+    if (jobsWithNames.length) {
+      // Fetch the first variant of each job. Since variants are auto-created
+      // by trigger, sort by created_at to get them deterministically.
+      for (const { name, jobId } of jobsWithNames) {
+        const { data: variants } = await sb
+          .from('variants')
+          .select('id')
+          .eq('job_id', jobId)
+          .order('created_at', { ascending: true })
+          .limit(1);
+        if (variants?.length) {
+          await sb.from('variants').update({ display_name: name }).eq('id', variants[0].id);
+        }
+      }
+    }
+
+    // 6. Kick the worker (best-effort)
+    fetch(`${$('sb-url').value}/functions/v1/process-job`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${$('sb-key').value}` },
+    }).catch(() => {});
+
+    // 7. Reset
+    if (document.querySelector('input[name="batch-mode"]:checked').value === 'text') {
+      $('batch-text').value = '';
+    } else {
+      $('batch-json').value = '';
+    }
+    $('batch-preview-modal').classList.remove('open');
+    refresh(true);
+  } catch (e) {
+    $('batch-preview-err').textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Submit batch';
+  }
+};
+
+// ---- LLM helper modal ----
+function buildLLMHelperText() {
+  return `# BRIEF — fill in the parts in [brackets] below, then keep the rest as-is.
+
+PRODUCT NAME: [e.g. "Sharpmate v2"]
+WHAT IT IS: [one-line description, e.g. "A sharpening jig for woodworking chisels and plane irons"]
+KEY DETAILS / FEATURES:
+- [feature 1]
+- [feature 2]
+- [feature 3]
+
+TARGET AUDIENCE: [e.g. "Hobby woodworkers, semi-pros, ages 35-65"]
+
+ANGLES TO EXPLORE (one per line — each angle = a different message/promise):
+- [e.g. "Easier than freehand sharpening"]
+- [e.g. "Saves time on every project"]
+- [e.g. "Built to last, made in the USA"]
+- [e.g. "Solves the problem of inconsistent edges"]
+
+VISUAL STYLES TO MIX (LLM should diversify across these):
+- editorial / magazine
+- bold graphic / poster
+- photographic lifestyle
+- minimal / premium
+
+NUMBER OF PROMPTS TO GENERATE: 50
+
+ADDITIONAL CONSTRAINTS (optional):
+[e.g. "Always show the product on a wood workbench, never on white background"]
+
+
+# YOUR TASK
+
+You are a creative director writing prompts for a static-image AI ad generator (gpt-image-2).
+Generate the requested number of UNIQUE, HIGH-QUALITY prompts for the product above.
+
+REQUIREMENTS for every prompt:
+1. Lead with format: "Static [aspect] ad for [product]"
+2. State the angle and audience match in 1 short sentence
+3. Specify visual style by referencing real brand/era/aesthetic (NOT vague adjectives like "modern" or "clean")
+4. Specify EXACT headline text in quotes, with position and weight (e.g. 'Headline (top, 80pt bold serif): "Wake the hell up."')
+5. Specify subheadline + CTA where applicable, with position
+6. Specify palette with concrete colors (or named scheme)
+7. Specify what to avoid (e.g. "no people, no hands, no overlay graphics")
+
+DIVERSITY:
+- Each prompt must explore a DIFFERENT angle from the list above (cycle through angles)
+- Each prompt must use a DIFFERENT visual style from the list above (cycle through styles)
+- Headlines must be original — no two prompts share the same headline
+- Compositions should vary (close-up vs wide, central vs off-center, etc.)
+
+OUTPUT FORMAT:
+Return ONLY the prompts, separated by a line containing exactly three hyphens (\`---\`) on its own line.
+No JSON, no numbering, no preamble, no commentary, no markdown headers.
+
+EXAMPLE FORMAT (this is the literal format I need):
+
+Static 9:16 ad for [product]. Angle: [angle]. Visual style: like [reference]. Subject: [...]. Headline (top, 72pt bold serif): "[headline]". Subhead (below, 22pt): "[subhead]". CTA (bottom button): "[CTA]". Palette: [colors]. Avoid: [list].
+---
+Static 9:16 ad for [product]. Angle: [different angle]. Visual style: like [different reference]. ...
+---
+[etc, until you have all the prompts requested]
+
+Begin generating now.`;
+}
+
+$('batch-helper-btn').onclick = () => {
+  $('batch-helper-text').value = buildLLMHelperText();
+  $('batch-helper-modal').classList.add('open');
+};
+$('batch-helper-close').onclick = () => $('batch-helper-modal').classList.remove('open');
+$('batch-helper-modal').onclick = (e) => {
+  if (e.target.id === 'batch-helper-modal') $('batch-helper-modal').classList.remove('open');
+};
+$('batch-helper-copy').onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($('batch-helper-text').value);
+    const btn = $('batch-helper-copy');
+    const original = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  } catch (e) {
+    alert('Copy failed: ' + e.message);
+  }
+};
+
+// Close batch-preview when clicking outside
+$('batch-preview-modal').onclick = (e) => {
+  if (e.target.id === 'batch-preview-modal') $('batch-preview-modal').classList.remove('open');
 };
 
 // ---- state ----
