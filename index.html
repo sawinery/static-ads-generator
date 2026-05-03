@@ -763,7 +763,32 @@ async function transcodeForUpload(file) {
 // State: an array of { kind:'fresh', file, role } | { kind:'sticky', path, name, role }
 // Persists to localStorage so it survives page reloads.
 const REF_KEY = 'ref-images-state-v1';
-const ROLE_PRESETS = ['reference', 'before', 'after', 'left', 'right', 'product_a', 'product_b', 'logo', 'background', 'custom'];
+const ROLE_PRESETS = [
+  'reference',
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+  'before', 'after',
+  'left', 'right',
+  'product_a', 'product_b',
+  'logo', 'background',
+  'custom',
+];
+
+// Suggest a sensible default role for the next image being added.
+// Auto-cycles A→B→C if you're using letters, otherwise picks "reference" for
+// the first image and leaves subsequent ones empty (user picks).
+function suggestNextRole() {
+  if (refImages.length === 0) return 'reference';
+  // Any image already using a letter? Find max + advance
+  const usedLetters = refImages
+    .map(r => r.role)
+    .filter(r => /^[A-H]$/.test(r || ''));
+  if (usedLetters.length > 0) {
+    const maxCode = Math.max(...usedLetters.map(l => l.charCodeAt(0)));
+    const next = String.fromCharCode(maxCode + 1);
+    if (next <= 'H') return next;
+  }
+  return '';  // user picks
+}
 
 let refImages = [];
 
@@ -899,7 +924,7 @@ $('ref-add-btn').onclick = () => $('ref-add-input').click();
 $('ref-add-input').onchange = (e) => {
   const file = e.target.files[0];
   if (!file) return;
-  refImages.push({ kind: 'fresh', file, role: refImages.length === 0 ? 'reference' : '' });
+  refImages.push({ kind: 'fresh', file, role: suggestNextRole() });
   e.target.value = '';
   saveRefImagesToStorage();
   renderRefImages();
@@ -1046,7 +1071,7 @@ function renderLibraryGrid() {
       }
       refImages.push({
         kind: 'sticky', path, name: label || path.split('-').slice(1).join('-'),
-        role: refImages.length === 0 ? 'reference' : '',
+        role: suggestNextRole(),
       });
       saveRefImagesToStorage();
       renderRefImages();
