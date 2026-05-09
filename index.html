@@ -701,7 +701,7 @@
       <h2>Create video ad</h2>
 
       <div style="display:flex; gap:8px; margin-bottom:10px;">
-        <button class="btn ghost small" id="va-load-template" style="flex:1">📋 Use existing ad as template</button>
+        <button class="btn ghost small" id="va-load-template" style="flex:1">📋 Duplicate / use as template</button>
         <button class="btn ghost small" id="va-options-refresh" title="Reload ad sets and pages from Meta">↻ Reload options</button>
       </div>
 
@@ -855,15 +855,22 @@
 </div>
 
 <div class="modal-bg" id="va-template-modal">
-  <div class="modal" style="width:min(560px, 92vw);">
-    <h3 style="margin:0 0 4px;">Use existing ad as template</h3>
-    <p class="hint" style="margin-top:0;">Paste a Meta ad ID. The form below will be pre-filled with that ad's text fields, page, and ad set. You'll still need to pick the videos.</p>
-    <label>Ad ID</label>
-    <input type="text" id="va-template-id" placeholder="e.g. 23857234234234234">
-    <div class="hint">Get this from Ads Manager: click the ad → URL contains <code style="font-size:11px;">selected_ad_ids=...</code></div>
+  <div class="modal" style="width:min(720px, 92vw); max-height:85vh; display:flex; flex-direction:column;">
+    <h3 style="margin:0 0 4px;">Duplicate ad / use as template</h3>
+    <p class="hint" style="margin-top:0;">Pick an existing ad. The form will be pre-filled with that ad's settings + creative. You can submit as-is to create an exact duplicate, or swap any slot before submitting.</p>
+    <input type="text" id="va-template-search" placeholder="🔎 Search by name, campaign, or ad set…" style="font-size:13px; padding:6px 10px; margin-bottom:8px;">
+    <div id="va-template-list" style="overflow:auto; flex:1; border:1px solid var(--line); border-radius:var(--radius);"></div>
+    <div class="hint" style="margin-top:6px; display:flex; align-items:center; gap:8px;">
+      <a href="#" id="va-template-manual-toggle" style="color:var(--ink-low); text-decoration:underline;">enter ID manually instead</a>
+      <span style="flex:1"></span>
+      <button class="btn ghost small" id="va-template-reload" title="Re-fetch ads from Meta">↻ Reload</button>
+    </div>
+    <div id="va-template-manual-row" style="display:none; margin-top:8px;">
+      <input type="text" id="va-template-id" placeholder="paste Ad ID, e.g. 23857234234234234" style="font-family:var(--mono); font-size:11px;">
+      <button class="btn small" id="va-template-load-manual" style="margin-top:6px;">Load fields</button>
+    </div>
     <div class="row" style="margin-top:14px;">
       <button class="btn ghost" id="va-template-cancel">Cancel</button>
-      <button class="btn" id="va-template-load">Load fields</button>
     </div>
     <div class="err" id="va-template-err"></div>
   </div>
@@ -4482,25 +4489,110 @@ $('va-dup-create').onclick = async () => {
 
 // ---- "use existing ad as template" ----
 
-$('va-load-template').onclick = () => {
+// ---- duplicate ad / use as template ----
+
+let vaTemplateAds = [];          // last-fetched ad list, cached for the session
+let vaTemplateLoading = false;
+
+$('va-load-template').onclick = async () => {
+  $('va-template-search').value = '';
   $('va-template-id').value = '';
   $('va-template-err').textContent = '';
+  $('va-template-manual-row').style.display = 'none';
   $('va-template-modal').classList.add('open');
+  // Lazy-load on first open
+  if (vaTemplateAds.length === 0) await vaTemplateFetchAds();
+  else renderVaTemplateList(vaTemplateAds);
 };
 $('va-template-cancel').onclick = () => $('va-template-modal').classList.remove('open');
 $('va-template-modal').onclick = (e) => {
   if (e.target.id === 'va-template-modal') $('va-template-modal').classList.remove('open');
 };
-$('va-template-load').onclick = async () => {
+$('va-template-reload').onclick = () => vaTemplateFetchAds(/*force*/ true);
+
+$('va-template-search').oninput = () => {
+  const f = $('va-template-search').value.trim().toLowerCase();
+  if (!f) { renderVaTemplateList(vaTemplateAds); return; }
+  const filtered = vaTemplateAds.filter(a =>
+    (a.name || '').toLowerCase().includes(f) ||
+    (a.adset_name || '').toLowerCase().includes(f) ||
+    (a.campaign_name || '').toLowerCase().includes(f) ||
+    a.id.includes(f),
+  );
+  renderVaTemplateList(filtered);
+};
+
+$('va-template-manual-toggle').onclick = (e) => {
+  e.preventDefault();
+  const row = $('va-template-manual-row');
+  row.style.display = row.style.display === 'none' ? '' : 'none';
+};
+$('va-template-load-manual').onclick = () => {
   const adId = $('va-template-id').value.trim();
   if (!adId) { $('va-template-err').textContent = 'Ad ID required'; return; }
+  loadAdAsTemplate(adId);
+};
+
+async function vaTemplateFetchAds(force = false) {
+  const c = vaCreds();
+  if (!c.metaAcct || !c.metaToken) {
+    $('va-template-err').textContent = 'Set Meta credentials first';
+    return;
+  }
+  if (vaTemplateLoading) return;
+  vaTemplateLoading = true;
+  $('va-template-list').innerHTML = `<div style="padding:30px; text-align:center; color:var(--ink-low);">Loading ads…</div>`;
+
+  try {
+    const r = await fetch(`${$('sb-url').value}/functions/v1/meta-fetch-ads`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${$('sb-key').value}`,
+      },
+      body: JSON.stringify({
+        ad_account_id: c.metaAcct,
+        access_token: c.metaToken,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
+    vaTemplateAds = data.ads || [];
+    renderVaTemplateList(vaTemplateAds);
+  } catch (e) {
+    $('va-template-list').innerHTML = `<div style="padding:30px; color:var(--danger); text-align:center;">${escape(e.message)}</div>`;
+  } finally {
+    vaTemplateLoading = false;
+  }
+}
+
+function renderVaTemplateList(ads) {
+  if (ads.length === 0) {
+    $('va-template-list').innerHTML = `<div style="padding:30px; text-align:center; color:var(--ink-low);">No ads found.</div>`;
+    return;
+  }
+  const statusColor = (s) => s === 'ACTIVE' ? 'var(--accent)' : (s === 'PAUSED' ? 'var(--ink-low)' : 'var(--ink-dim)');
+  $('va-template-list').innerHTML = ads.map(a => `
+    <div class="va-tpl-row" data-ad-id="${a.id}" style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-bottom:1px solid var(--line); cursor:pointer;">
+      ${a.creative_thumbnail_url ? `<img src="${escape(a.creative_thumbnail_url)}" loading="lazy" style="width:48px; height:48px; object-fit:cover; border-radius:4px; flex-shrink:0; background:var(--bg);">` : `<div style="width:48px; height:48px; background:var(--panel-2); border-radius:4px; flex-shrink:0;"></div>`}
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:600; font-size:13px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escape(a.name)}">${escape(a.name)}</div>
+        <div style="font-size:11px; color:var(--ink-low); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escape(a.campaign_name || '')}${a.adset_name ? ` · ${escape(a.adset_name)}` : ''}</div>
+      </div>
+      <div style="font-size:10px; font-family:var(--mono); color:${statusColor(a.effective_status)}; text-transform:uppercase;">${escape(a.effective_status || '')}</div>
+    </div>
+  `).join('');
+  $('va-template-list').querySelectorAll('.va-tpl-row').forEach(row => {
+    row.addEventListener('mouseenter', () => row.style.background = 'var(--panel-2)');
+    row.addEventListener('mouseleave', () => row.style.background = '');
+    row.onclick = () => loadAdAsTemplate(row.dataset.adId);
+  });
+}
+
+async function loadAdAsTemplate(adId) {
   const c = vaCreds();
   if (!c.metaToken) { $('va-template-err').textContent = 'Set Meta credentials first'; return; }
-
-  const btn = $('va-template-load');
-  btn.disabled = true;
-  btn.textContent = 'Loading…';
-  $('va-template-err').textContent = '';
+  $('va-template-err').textContent = 'Loading ad…';
 
   try {
     const r = await fetch(`${$('sb-url').value}/functions/v1/meta-fetch-ad-full`, {
@@ -4539,25 +4631,17 @@ $('va-template-load').onclick = async () => {
     if (data.link_url)     $('va-link').value        = data.link_url;
     if (data.cta_type) {
       const ctaSel = $('va-cta');
-      if ([...ctaSel.options].some(o => o.value === data.cta_type)) {
-        ctaSel.value = data.cta_type;
-      }
+      if ([...ctaSel.options].some(o => o.value === data.cta_type)) ctaSel.value = data.cta_type;
     }
 
-    // Switch creative type radio if source was image
     if (data.creative_type === 'image') {
       const radio = document.querySelector('input[name="va-creative-type"][value="image"]');
-      if (radio) {
-        radio.checked = true;
-        radio.dispatchEvent(new Event('change'));
-      }
+      if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
     } else if (data.creative_type === 'video') {
       const radio = document.querySelector('input[name="va-creative-type"][value="video"]');
       if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
     }
 
-    // Pre-fill the existing creative as "current" picks. The user can then
-    // either submit as-is to duplicate, or click × on a slot to swap.
     const tplPicks = (() => {
       if (data.creative_type === 'video') {
         return {
@@ -4584,17 +4668,14 @@ $('va-template-load').onclick = async () => {
       document.querySelector('[data-pick-clear="1:1"]').style.display = '';
       document.querySelector('[data-pick="1:1"]').closest('.va-pick-row').classList.add('has-pick');
     }
-    // Track that this is a duplicate of an existing ad
     window.__sourceAdId = adId;
 
     $('va-template-modal').classList.remove('open');
+    $('va-template-err').textContent = '';
   } catch (e) {
     $('va-template-err').textContent = e.message;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Load fields';
   }
-};
+}
 
 // ---- video ad list ----
 $('va-refresh').onclick = vaRefreshList;
