@@ -4381,7 +4381,7 @@ async function vaLoadOptions() {
     const igItems = (data.instagram_accounts || []).map(a => ({
       id: a.id,
       label: `@${a.username}`,
-      sub: a.id,
+      sub: a.page_name ? `via ${a.page_name} · ${a.id}` : a.id,
     }));
     igCombo.__setItems(igItems);
     if (prevIg) igCombo.__setValue(prevIg);
