@@ -109,6 +109,7 @@
   }
   table.va-sheet {
     border-collapse:collapse; width:100%; font-size:13px;
+    table-layout:fixed;
   }
   table.va-sheet thead th {
     position:sticky; top:0; background:var(--panel-2);
@@ -139,12 +140,15 @@
   .va-cell-multi {
     cursor:pointer; padding:7px 9px; min-height:36px;
     background:var(--bg); border:1px solid var(--line); border-radius:4px;
-    display:flex; align-items:center; justify-content:space-between; gap:6px;
+    display:flex; align-items:flex-start; justify-content:space-between; gap:6px;
     color:var(--ink-low); font-size:13px;
   }
   .va-cell-multi:hover { border-color:var(--accent); }
-  .va-cell-multi .preview { flex:1; min-width:0; overflow:hidden;
-    text-overflow:ellipsis; white-space:nowrap; color:var(--ink); }
+  .va-cell-multi .preview {
+    flex:1; min-width:0; color:var(--ink); line-height:1.4;
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
+    overflow:hidden; word-break:break-word;
+  }
   .va-cell-multi .preview.empty { color:var(--ink-low); font-style:italic; }
   .va-cell-multi .count {
     font-size:11px; padding:2px 6px; border-radius:10px;
@@ -879,9 +883,9 @@
             <th style="width:80px;">Type</th>
             <th style="min-width:170px;">9:16 asset</th>
             <th style="min-width:170px;">1:1 asset</th>
-            <th style="min-width:240px;">Primary text</th>
-            <th style="min-width:160px;">Headline</th>
-            <th style="min-width:160px;">Destination URL</th>
+            <th style="width:280px; min-width:280px; max-width:280px;">Primary text</th>
+            <th style="width:200px; min-width:200px; max-width:200px;">Headline</th>
+            <th style="width:200px; min-width:200px; max-width:200px;">Destination URL</th>
             <th style="min-width:110px;">CTA</th>
             <th style="width:90px;">Status</th>
             <th style="width:120px;">Actions</th>
@@ -5224,6 +5228,14 @@ function vaSheetRowEl(row, idx) {
     warn.innerHTML = '🚫 Guided creation — API can\'t add ads. Pick a different ad set.';
     tdAdset.appendChild(warn);
   }
+  // Show campaign name under the picker so it's clear which campaign the
+  // selected ad set belongs to.
+  if (adsetItem?._raw?.campaign_name) {
+    const camp = document.createElement('div');
+    camp.style.cssText = 'margin-top:4px; font-size:11px; color:var(--ink-low);';
+    camp.textContent = `📁 ${adsetItem._raw.campaign_name}`;
+    tdAdset.appendChild(camp);
+  }
   tr.appendChild(tdAdset);
 
   // Page
@@ -5374,16 +5386,42 @@ function vaMakeMiniSelect(masterComboId, currentId, onChange) {
   blank.value = ''; blank.textContent = '—';
   sel.appendChild(blank);
 
-  for (const it of items) {
-    const opt = document.createElement('option');
-    opt.value = it.id;
-    opt.textContent = it.label;
-    if (it.id === currentId) opt.selected = true;
-    sel.appendChild(opt);
+  // If items have a `group` field (which combo-adset items do — campaign name),
+  // build <optgroup> sections so each ad set's campaign is visually clear in
+  // the dropdown. Also prefix the option text with the campaign for searchability.
+  const useGroups = items.some(it => it.group);
+  if (useGroups) {
+    const groups = new Map();
+    for (const it of items) {
+      const g = it.group || '(no campaign)';
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(it);
+    }
+    // Sort groups alphabetically
+    const sortedGroups = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+    for (const [groupName, groupItems] of sortedGroups) {
+      const og = document.createElement('optgroup');
+      og.label = groupName;
+      for (const it of groupItems) {
+        const opt = document.createElement('option');
+        opt.value = it.id;
+        opt.textContent = it.label;
+        if (it.id === currentId) opt.selected = true;
+        og.appendChild(opt);
+      }
+      sel.appendChild(og);
+    }
+  } else {
+    for (const it of items) {
+      const opt = document.createElement('option');
+      opt.value = it.id;
+      opt.textContent = it.label;
+      if (it.id === currentId) opt.selected = true;
+      sel.appendChild(opt);
+    }
   }
 
-  // Show a placeholder if currentId isn't in master's items (perhaps options
-  // haven't loaded yet, or the saved value is stale)
+  // Show a placeholder if currentId isn't in master's items
   if (currentId && !items.some(i => i.id === currentId)) {
     const opt = document.createElement('option');
     opt.value = currentId;
@@ -5658,11 +5696,35 @@ function vaSheetAssetCell(row, aspect) {
 }
 
 // Asynchronously load the thumbnail for an asset and inject it into the cell.
-// For library images we generate signed URL; for Dropbox we'd need a separate
-// fetch (skipped for now — emoji placeholder is sufficient).
+// For library images we generate signed URL; for Dropbox we fetch via Edge.
+const _dbxThumbCache = new Map();   // path → data URL (in memory only — base64 is big)
+const DBX_THUMB_LS_KEY = 'dbx-thumb-cache-v1';
+// Hydrate from localStorage (small images only)
+try {
+  const raw = localStorage.getItem(DBX_THUMB_LS_KEY);
+  if (raw) {
+    const obj = JSON.parse(raw);
+    for (const [k, v] of Object.entries(obj)) _dbxThumbCache.set(k, v);
+  }
+} catch (_) {}
+let _dbxThumbSaveTimer = null;
+function _saveDbxThumbCache() {
+  if (_dbxThumbSaveTimer) clearTimeout(_dbxThumbSaveTimer);
+  _dbxThumbSaveTimer = setTimeout(() => {
+    try {
+      // Cap at most-recent 100 entries — base64 images are big
+      const all = [..._dbxThumbCache.entries()].slice(-100);
+      const obj = Object.fromEntries(all);
+      localStorage.setItem(DBX_THUMB_LS_KEY, JSON.stringify(obj));
+    } catch (_) {
+      // localStorage full — wipe and rebuild from current Map
+      try { localStorage.removeItem(DBX_THUMB_LS_KEY); } catch (_) {}
+    }
+  }, 1500);
+}
+
 async function vaSheetLoadAssetThumb(thumbEl, pick) {
   if (pick.source === 'library' && pick.libraryPath && sb) {
-    // Need a signed URL to display. Use the existing helper.
     const url = signedOutputUrl(pick.libraryPath);
     if (url) {
       const img = document.createElement('img');
@@ -5673,12 +5735,48 @@ async function vaSheetLoadAssetThumb(thumbEl, pick) {
     }
     return;
   }
-  if (pick.source === 'existing' && pick.kind === 'image' && pick.metaHash) {
-    // Could fetch Meta image url by hash here, but skip for now
+  if (pick.source === 'dropbox' && pick.path) {
+    const cacheKey = `${pick.root || 'team'}:${pick.path}`;
+    if (_dbxThumbCache.has(cacheKey)) {
+      const img = document.createElement('img');
+      img.src = _dbxThumbCache.get(cacheKey);
+      thumbEl.innerHTML = '';
+      thumbEl.appendChild(img);
+      return;
+    }
+    // Fetch via Edge Function
+    try {
+      const c = vaCreds();
+      if (!c.dbxKey || !c.dbxSecret || !c.dbxRefresh) return;
+      const r = await fetch(`${$('sb-url').value}/functions/v1/dropbox-thumbnail`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${$('sb-key').value}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          path: pick.path,
+          dropbox_app_key: c.dbxKey,
+          dropbox_app_secret: c.dbxSecret,
+          dropbox_refresh_token: c.dbxRefresh,
+          dropbox_team_member_id: c.dbxTeamId || undefined,
+          personal_root: pick.root === 'personal',
+          size: 'w256h256',
+        }),
+      });
+      const data = await r.json();
+      if (data.data_url) {
+        _dbxThumbCache.set(cacheKey, data.data_url);
+        _saveDbxThumbCache();
+        const img = document.createElement('img');
+        img.src = data.data_url;
+        thumbEl.innerHTML = '';
+        thumbEl.appendChild(img);
+      }
+    } catch (_) {}
     return;
   }
-  // Dropbox thumbs would need a get_thumbnail call — skip for now,
-  // keep emoji placeholder.
+  // Existing-source picks — Meta image hash → could fetch URL but skip for now
 }
 
 // Simple library lookup: prompt for ad name, look up in variants table, pick best match
