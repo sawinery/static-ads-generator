@@ -3622,28 +3622,35 @@ async function dbxNavigate(path) {
     $('dbx-modal-list').innerHTML = `<div style="padding:30px; color:var(--danger); text-align:center;">${escape(res.error)}</div>`;
     return;
   }
-  if (!res.entries || res.entries.length === 0) {
+
+  // The new Edge Function returns { folders, files } separated. Build a
+  // unified list to render.
+  const folderEntries = (res.folders ?? []).map(f => ({ ...f, _kind: 'folder' }));
+  const fileEntries   = (res.files ?? []).map(f => ({ ...f, _kind: 'file' }));
+  const all = [...folderEntries, ...fileEntries];
+
+  if (all.length === 0) {
     $('dbx-modal-list').innerHTML = `<div style="padding:30px; text-align:center; color:var(--ink-low);">Empty folder.</div>`;
     return;
   }
 
   // Folders first, then files. Files: highlight videos as pickable, dim images.
-  const sorted = [...res.entries].sort((a, b) => {
-    if (a.tag !== b.tag) return a.tag === 'folder' ? -1 : 1;
+  const sorted = all.sort((a, b) => {
+    if (a._kind !== b._kind) return a._kind === 'folder' ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
 
   $('dbx-modal-list').innerHTML = sorted.map(e => {
-    const isVideo = e.tag === 'file' && VIDEO_EXT.test(e.name);
-    const sizeText = e.size ? ` · ${(e.size / 1024 / 1024).toFixed(1)} MB` : '';
-    if (e.tag === 'folder') {
+    if (e._kind === 'folder') {
       return `<div class="dbx-row" data-folder="${escape(e.path)}" style="padding:8px 10px; cursor:pointer; border-radius:4px; display:flex; align-items:center; gap:8px;">
         <span>📁</span>
         <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escape(e.name)}</span>
       </div>`;
     }
+    const isVideo = e.kind === 'video';   // Edge Function pre-classifies file kinds
     const icon = isVideo ? '🎬' : '🖼';
     const dim = isVideo ? '' : 'opacity:0.4;';
+    const sizeText = e.size ? ` · ${(e.size / 1024 / 1024).toFixed(1)} MB` : '';
     return `<div class="dbx-row" data-file="${isVideo ? escape(e.path) : ''}" data-name="${escape(e.name)}" style="padding:8px 10px; ${isVideo ? 'cursor:pointer;' : 'cursor:not-allowed;'} border-radius:4px; display:flex; align-items:center; gap:8px; ${dim}">
       <span>${icon}</span>
       <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escape(e.name)}</span>
