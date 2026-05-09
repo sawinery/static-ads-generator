@@ -123,6 +123,20 @@
   }
   table.va-sheet tbody tr.va-row:hover { background:rgba(255,255,255,0.02); }
   table.va-sheet tbody tr.va-row.is-submitting { background:rgba(100,180,255,0.05); }
+
+  /* Locked rows (submitted or in-flight): all inputs disabled visually,
+     pointer events blocked except for actions like preview thumbnails and
+     duplicate/delete buttons. */
+  tr.va-row.is-locked input,
+  tr.va-row.is-locked textarea,
+  tr.va-row.is-locked select,
+  tr.va-row.is-locked .va-cell-multi {
+    pointer-events:none;
+    opacity:0.65;
+  }
+  tr.va-row.is-locked .va-creative-type-toggle button { pointer-events:none; opacity:0.65; }
+  tr.va-row.is-locked .va-cell-asset .actions { display:none; }
+  tr.va-row.is-locked .va-cell-asset .thumb { cursor:zoom-in; }
   table.va-sheet tbody tr.va-row.is-failed     { background:rgba(255,80,80,0.06); }
   table.va-sheet tbody tr.va-row.is-success    { background:rgba(80,200,120,0.05); }
 
@@ -1102,20 +1116,70 @@
   </div>
 </div>
 
+<!-- Asset preview modal: click any thumbnail to view the full image/video -->
+<div class="modal-bg" id="va-preview-modal" style="z-index:1000;">
+  <div id="va-preview-content" style="max-width:90vw; max-height:90vh; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px;">
+    <div id="va-preview-media" style="display:flex; align-items:center; justify-content:center;"></div>
+    <div id="va-preview-name" style="color:var(--ink-low); font-size:12px; font-family:var(--mono); text-align:center; max-width:90vw; word-break:break-all;"></div>
+    <button class="btn ghost small" id="va-preview-close">Close (Esc)</button>
+  </div>
+</div>
+
 <!-- Side drawer for editing multi-value sheet cells -->
 <div class="va-drawer-bg" id="va-drawer-bg"></div>
 <aside class="va-drawer" id="va-drawer">
   <header>
     <h3 id="va-drawer-title">Edit</h3>
     <span style="flex:1"></span>
+    <button class="btn ghost small" id="va-drawer-manage-favs">⚙ Manage favorites</button>
     <button class="btn ghost small" id="va-drawer-done">Done</button>
   </header>
   <div class="body">
     <p class="hint" id="va-drawer-hint">Edits save automatically. Press Esc or click outside to close.</p>
+
+    <!-- Favorites picker. Hidden when there are none. -->
+    <div id="va-drawer-favs-section" style="display:none; margin-bottom:18px; padding:12px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius);">
+      <div style="display:flex; align-items:center; margin-bottom:8px;">
+        <strong style="font-size:12px; color:var(--ink-low); text-transform:uppercase; letter-spacing:0.04em;">★ Favorites</strong>
+        <span style="flex:1"></span>
+        <span class="hint" style="font-size:11px; margin:0;">Click to insert</span>
+      </div>
+      <div id="va-drawer-favs-list" style="display:flex; flex-direction:column; gap:6px;"></div>
+    </div>
+
     <div id="va-drawer-items"></div>
     <button class="btn ghost small" id="va-drawer-add" style="margin-top:8px;">+ Add another</button>
   </div>
 </aside>
+
+<!-- Favorites management modal: full CRUD for saved snippets -->
+<div class="modal-bg" id="va-favs-modal">
+  <div class="modal" style="width:min(720px, 92vw); max-height:85vh; display:flex; flex-direction:column;">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+      <h3 style="margin:0;">Manage text favorites</h3>
+      <span style="flex:1"></span>
+      <select id="va-favs-kind" style="padding:5px 9px;">
+        <option value="primary_text">Primary texts</option>
+        <option value="headline">Headlines</option>
+      </select>
+      <button class="btn ghost small" id="va-favs-refresh">↻</button>
+      <button class="btn ghost small" id="va-favs-close">Close</button>
+    </div>
+    <div class="hint" style="margin-bottom:10px;">Add, edit, or delete saved snippets. These show up in the drawer when editing matching fields.</div>
+
+    <div style="margin-bottom:10px; padding:10px; background:var(--panel-2); border-radius:var(--radius);">
+      <div style="display:flex; gap:6px; margin-bottom:6px;">
+        <input id="va-favs-new-label" placeholder="Label (optional)" style="flex:1;">
+      </div>
+      <textarea id="va-favs-new-text" placeholder="Enter the snippet text…" style="min-height:60px; width:100%;"></textarea>
+      <div style="display:flex; gap:6px; margin-top:6px; justify-content:flex-end;">
+        <button class="btn small" id="va-favs-add">+ Add favorite</button>
+      </div>
+    </div>
+
+    <div id="va-favs-list" style="overflow:auto; flex:1; display:flex; flex-direction:column; gap:8px;"></div>
+  </div>
+</div>
 
 <div class="modal-bg" id="va-template-modal">
   <div class="modal" style="width:min(720px, 92vw); max-height:85vh; display:flex; flex-direction:column;">
@@ -4261,7 +4325,7 @@ async function openLibPicker(aspect) {
   // fetch the most recent N to keep the picker fast — search filters client-side.
   const aspectKey = aspect;  // '9:16' or '1:1'
   const { data, error } = await sb.from('variants')
-    .select('id, job_id, output_path, thumb_path, display_name, aspect, prompt, created_at')
+    .select('id, job_id, output_path, thumb_path, display_name, aspect, final_prompt, created_at, jobs(prompt)')
     .eq('status', 'completed')
     .eq('aspect', aspectKey)
     .order('created_at', { ascending: false })
@@ -4276,11 +4340,13 @@ async function openLibPicker(aspect) {
 
 function renderLibGrid(filterText) {
   const f = filterText.trim().toLowerCase();
+  // Prompt comes from jobs.prompt (joined) or final_prompt on the variant
+  const promptOf = (v) => v.final_prompt || v.jobs?.prompt || '';
   const filtered = !f
     ? vaLibVariantsCache
     : vaLibVariantsCache.filter(v =>
         (v.display_name || '').toLowerCase().includes(f) ||
-        (v.prompt || '').toLowerCase().includes(f));
+        promptOf(v).toLowerCase().includes(f));
 
   if (filtered.length === 0) {
     $('va-lib-grid').innerHTML = `<div style="grid-column:1/-1; padding:30px; text-align:center; color:var(--ink-low);">${vaLibVariantsCache.length === 0 ? 'No completed variants for this aspect yet.' : 'No matches.'}</div>`;
@@ -4289,7 +4355,8 @@ function renderLibGrid(filterText) {
 
   $('va-lib-grid').innerHTML = filtered.map(v => {
     const url = signedOutputUrl(v.thumb_path || v.output_path);
-    const name = v.display_name || (v.prompt ? v.prompt.slice(0, 40) : `variant ${v.id.slice(0, 8)}`);
+    const p = promptOf(v);
+    const name = v.display_name || (p ? p.slice(0, 40) : `variant ${v.id.slice(0, 8)}`);
     return `<div class="va-lib-card" data-path="${escape(v.output_path)}" data-name="${escape(name)}" style="border:1px solid var(--line); border-radius:var(--radius); cursor:pointer; overflow:hidden; background:var(--panel-2);">
       <div style="aspect-ratio:1/1; background:var(--bg);">
         <img src="${url}" loading="lazy" style="width:100%; height:100%; object-fit:cover; display:block;">
@@ -5173,6 +5240,11 @@ function vaSheetRowEl(row, idx) {
   if (row.data.status === 'success')    tr.classList.add('is-success');
   tr.dataset.rowId = row.id;
 
+  // Rows that have been submitted (or are mid-submit) become read-only.
+  // We still render all the inputs to show the data; we just disable them.
+  const locked = row.data.status === 'success' || row.data.status === 'submitting';
+  if (locked) tr.classList.add('is-locked');
+
   // Helper: one-shot value updater
   const update = (key, val) => { row.data[key] = val; vaSheetSave(); };
 
@@ -5519,15 +5591,20 @@ function vaSheetMultiCell(row, key, label, opts = {}) {
 }
 
 // Side drawer for editing arrays of strings (primary texts, headlines)
-let vaDrawerCurrent = null;  // { row, key, opts }
+let vaDrawerCurrent = null;  // { row, key, opts, kind }
 
 function vaSheetOpenDrawer(row, key, label, opts = {}) {
-  vaDrawerCurrent = { row, key, opts };
+  // Map key → kind for favorites
+  const kind = key === 'primary_texts' ? 'primary_text'
+             : key === 'headlines'     ? 'headline'
+             : null;
+  vaDrawerCurrent = { row, key, opts, kind };
   $('va-drawer-title').textContent = `Edit ${label.toLowerCase()}s`;
   $('va-drawer-hint').innerHTML =
     `Add up to 5 variants. Meta's dynamic creative will A/B test them. ` +
-    `Edits save automatically. Press Esc or click outside to close.`;
+    `Click ☆ to save a favorite. Esc or click outside to close.`;
   vaSheetRenderDrawer();
+  vaFavoritesRefreshDrawer();
   $('va-drawer-bg').classList.add('open');
   $('va-drawer').classList.add('open');
 }
@@ -5554,6 +5631,12 @@ function vaSheetRenderDrawer() {
   const arr = row.data[key];
   const items = $('va-drawer-items');
   items.innerHTML = '';
+
+  function autoSize(ta) {
+    ta.style.height = 'auto';
+    ta.style.height = Math.max(80, ta.scrollHeight) + 'px';
+  }
+
   arr.forEach((val, i) => {
     const itemRow = document.createElement('div');
     itemRow.className = 'item';
@@ -5576,8 +5659,38 @@ function vaSheetRenderDrawer() {
     input.oninput = () => {
       arr[i] = input.value;
       vaSheetSave();
+      if (opts.textarea) autoSize(input);
     };
     itemRow.appendChild(input);
+    if (opts.textarea) {
+      // Auto-grow on initial render too. Need to be in DOM first to measure.
+      requestAnimationFrame(() => autoSize(input));
+    }
+
+    // Action column: star (save to favorites) + delete
+    const actionCol = document.createElement('div');
+    actionCol.style.cssText = 'display:flex; flex-direction:column; gap:4px;';
+
+    const fav = document.createElement('button');
+    fav.className = 'del';
+    fav.textContent = '☆';
+    fav.title = 'Save to favorites';
+    fav.style.fontSize = '14px';
+    fav.onclick = async () => {
+      const text = input.value.trim();
+      if (!text) { alert('Empty — type something first'); return; }
+      const label = prompt('Label (optional, for finding it later):', text.slice(0, 40)) || null;
+      try {
+        await vaFavoritesAdd(vaDrawerCurrent.kind, text, label);
+        fav.textContent = '★';
+        fav.title = 'Saved!';
+        setTimeout(() => { fav.textContent = '☆'; fav.title = 'Save to favorites'; }, 2000);
+        vaFavoritesRefreshDrawer();
+      } catch (e) {
+        alert('Save failed: ' + e.message);
+      }
+    };
+    actionCol.appendChild(fav);
 
     if (arr.length > 1) {
       const del = document.createElement('button');
@@ -5589,8 +5702,9 @@ function vaSheetRenderDrawer() {
         vaSheetSave();
         vaSheetRenderDrawer();
       };
-      itemRow.appendChild(del);
+      actionCol.appendChild(del);
     }
+    itemRow.appendChild(actionCol);
 
     items.appendChild(itemRow);
   });
@@ -5611,6 +5725,190 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && vaDrawerCurrent) vaSheetCloseDrawer();
 });
 
+// ---- Text favorites ----
+//
+// Saved snippets backed by the text_favorites table. Two kinds:
+// 'primary_text' and 'headline'. Drawer shows matching favorites at top
+// with click-to-insert. Standalone modal lets user CRUD them.
+
+async function vaFavoritesAdd(kind, text, label) {
+  if (!sb) throw new Error('Connect Supabase first');
+  if (!kind || !text) throw new Error('Missing kind or text');
+  const { error } = await sb.from('text_favorites').insert({
+    kind, text, label: label || null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+async function vaFavoritesList(kind) {
+  if (!sb) return [];
+  const { data, error } = await sb.from('text_favorites')
+    .select('id, kind, label, text, created_at, updated_at')
+    .eq('kind', kind)
+    .order('created_at', { ascending: false });
+  if (error) { console.error(error); return []; }
+  return data || [];
+}
+
+async function vaFavoritesUpdate(id, fields) {
+  if (!sb) throw new Error('Connect Supabase first');
+  const { error } = await sb.from('text_favorites').update(fields).eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+async function vaFavoritesDelete(id) {
+  if (!sb) throw new Error('Connect Supabase first');
+  const { error } = await sb.from('text_favorites').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+// Render favorites section inside the drawer when it's open
+async function vaFavoritesRefreshDrawer() {
+  if (!vaDrawerCurrent || !vaDrawerCurrent.kind) {
+    $('va-drawer-favs-section').style.display = 'none';
+    return;
+  }
+  const favs = await vaFavoritesList(vaDrawerCurrent.kind);
+  const list = $('va-drawer-favs-list');
+  if (favs.length === 0) {
+    $('va-drawer-favs-section').style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+  $('va-drawer-favs-section').style.display = '';
+  list.innerHTML = '';
+  for (const f of favs) {
+    const item = document.createElement('div');
+    item.style.cssText = `padding:8px 10px; background:var(--bg);
+      border:1px solid var(--line); border-radius:4px; cursor:pointer;
+      font-size:12px; color:var(--ink); display:flex; gap:8px; align-items:flex-start;`;
+    const labelText = f.label ? f.label : f.text.slice(0, 60) + (f.text.length > 60 ? '…' : '');
+    item.innerHTML = `
+      <div style="flex:1; min-width:0;">
+        ${f.label ? `<div style="color:var(--accent); font-size:11px; margin-bottom:3px;">${escape(f.label)}</div>` : ''}
+        <div style="color:var(--ink-low); white-space:pre-wrap; max-height:60px; overflow:hidden; line-height:1.4;">${escape(f.text)}</div>
+      </div>
+    `;
+    item.title = 'Click to insert';
+    item.onmouseenter = () => { item.style.borderColor = 'var(--accent)'; };
+    item.onmouseleave = () => { item.style.borderColor = 'var(--line)'; };
+    item.onclick = () => {
+      // Insert into the first empty slot, or append a new one (up to 5)
+      const arr = vaDrawerCurrent.row.data[vaDrawerCurrent.key];
+      const emptyIdx = arr.findIndex(v => !v || !v.trim());
+      if (emptyIdx >= 0) {
+        arr[emptyIdx] = f.text;
+      } else if (arr.length < 5) {
+        arr.push(f.text);
+      } else {
+        alert('Already have 5 variants. Delete one to insert a favorite.');
+        return;
+      }
+      vaSheetSave();
+      vaSheetRenderDrawer();
+    };
+    list.appendChild(item);
+  }
+}
+
+// Manage favorites modal
+$('va-drawer-manage-favs').onclick = () => {
+  // Pre-select current kind if drawer is open
+  if (vaDrawerCurrent?.kind) {
+    $('va-favs-kind').value = vaDrawerCurrent.kind;
+  }
+  $('va-favs-modal').classList.add('open');
+  vaFavsRefreshList();
+};
+$('va-favs-close').onclick = () => $('va-favs-modal').classList.remove('open');
+$('va-favs-modal').onclick = (e) => {
+  if (e.target.id === 'va-favs-modal') $('va-favs-modal').classList.remove('open');
+};
+$('va-favs-kind').onchange = vaFavsRefreshList;
+$('va-favs-refresh').onclick = vaFavsRefreshList;
+
+$('va-favs-add').onclick = async () => {
+  const kind = $('va-favs-kind').value;
+  const label = $('va-favs-new-label').value.trim() || null;
+  const text = $('va-favs-new-text').value.trim();
+  if (!text) { alert('Text required'); return; }
+  try {
+    await vaFavoritesAdd(kind, text, label);
+    $('va-favs-new-label').value = '';
+    $('va-favs-new-text').value = '';
+    await vaFavsRefreshList();
+    // Also refresh the drawer if it's open and matches this kind
+    if (vaDrawerCurrent?.kind === kind) vaFavoritesRefreshDrawer();
+  } catch (e) {
+    alert('Add failed: ' + e.message);
+  }
+};
+
+async function vaFavsRefreshList() {
+  const kind = $('va-favs-kind').value;
+  const favs = await vaFavoritesList(kind);
+  const list = $('va-favs-list');
+  if (favs.length === 0) {
+    list.innerHTML = `<div style="padding:30px; text-align:center; color:var(--ink-low);">No ${kind === 'primary_text' ? 'primary text' : 'headline'} favorites yet. Add one above.</div>`;
+    return;
+  }
+  list.innerHTML = '';
+  for (const f of favs) {
+    const card = document.createElement('div');
+    card.style.cssText = 'padding:10px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); display:flex; flex-direction:column; gap:6px;';
+
+    const labelInput = document.createElement('input');
+    labelInput.type = 'text';
+    labelInput.value = f.label || '';
+    labelInput.placeholder = 'Label (optional)';
+    labelInput.style.cssText = 'padding:5px 8px; font-size:12px; background:var(--bg); border:1px solid var(--line); border-radius:4px; color:var(--ink);';
+
+    const textArea = document.createElement('textarea');
+    textArea.value = f.text;
+    textArea.style.cssText = 'min-height:60px; padding:6px 8px; font-size:13px; background:var(--bg); border:1px solid var(--line); border-radius:4px; color:var(--ink); font-family:inherit; resize:vertical;';
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; gap:6px; justify-content:flex-end;';
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn ghost small';
+    saveBtn.textContent = 'Save';
+    saveBtn.onclick = async () => {
+      try {
+        await vaFavoritesUpdate(f.id, {
+          label: labelInput.value.trim() || null,
+          text: textArea.value,
+        });
+        saveBtn.textContent = '✓';
+        setTimeout(() => { saveBtn.textContent = 'Save'; }, 1200);
+        if (vaDrawerCurrent?.kind === f.kind) vaFavoritesRefreshDrawer();
+      } catch (e) {
+        alert('Save failed: ' + e.message);
+      }
+    };
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn ghost small';
+    delBtn.textContent = 'Delete';
+    delBtn.style.color = 'var(--danger)';
+    delBtn.onclick = async () => {
+      if (!confirm('Delete this favorite?')) return;
+      try {
+        await vaFavoritesDelete(f.id);
+        await vaFavsRefreshList();
+        if (vaDrawerCurrent?.kind === f.kind) vaFavoritesRefreshDrawer();
+      } catch (e) {
+        alert('Delete failed: ' + e.message);
+      }
+    };
+    row.appendChild(delBtn);
+    row.appendChild(saveBtn);
+
+    card.appendChild(labelInput);
+    card.appendChild(textArea);
+    card.appendChild(row);
+    list.appendChild(card);
+  }
+}
+
 function vaSheetAssetCell(row, aspect) {
   const wrap = document.createElement('div');
   wrap.className = 'va-cell-asset';
@@ -5627,6 +5925,9 @@ function vaSheetAssetCell(row, aspect) {
     thumb.appendChild(placeholder);
     // Async-load real thumbnail
     vaSheetLoadAssetThumb(thumb, pick).catch(() => {});
+    // Click to preview full asset
+    thumb.style.cursor = 'zoom-in';
+    thumb.onclick = (e) => { e.stopPropagation(); vaSheetPreviewAsset(pick); };
   } else {
     const placeholder = document.createElement('div');
     placeholder.className = 'placeholder';
@@ -5653,40 +5954,42 @@ function vaSheetAssetCell(row, aspect) {
   const actions = document.createElement('div');
   actions.className = 'actions';
 
-  const dbxBtn = document.createElement('button');
-  dbxBtn.className = 'btn ghost small';
-  dbxBtn.textContent = '📦 Dropbox';
-  dbxBtn.title = 'Pick from Dropbox';
-  dbxBtn.onclick = () => vaSheetPickFromDropbox(row, aspect);
-  actions.appendChild(dbxBtn);
-
-  if (row.data.creative_type === 'image') {
-    const libBtn = document.createElement('button');
-    libBtn.className = 'btn ghost small';
-    libBtn.textContent = '🖼 Library';
-    libBtn.title = 'Pick from library';
-    libBtn.onclick = () => vaSheetPickFromLibrary(row, aspect);
-    actions.appendChild(libBtn);
-
-    const lookupBtn = document.createElement('button');
-    lookupBtn.className = 'btn ghost small';
-    lookupBtn.textContent = '🔎';
-    lookupBtn.title = 'Library lookup by name';
-    lookupBtn.onclick = () => vaSheetLibLookup(row, aspect);
-    actions.appendChild(lookupBtn);
-  }
-
   if (pick) {
+    // Already have media — show only Remove. Cleaner UI.
     const clearBtn = document.createElement('button');
     clearBtn.className = 'btn ghost small';
-    clearBtn.textContent = '×';
-    clearBtn.title = 'Clear';
+    clearBtn.textContent = '× Remove';
+    clearBtn.title = 'Remove this media (then you can pick a new one)';
     clearBtn.onclick = () => {
       row.data[pickKey] = null;
       vaSheetSave();
       vaSheetRender();
     };
     actions.appendChild(clearBtn);
+  } else {
+    // No media yet — show pick buttons
+    const dbxBtn = document.createElement('button');
+    dbxBtn.className = 'btn ghost small';
+    dbxBtn.textContent = '📦 Dropbox';
+    dbxBtn.title = 'Pick from Dropbox';
+    dbxBtn.onclick = () => vaSheetPickFromDropbox(row, aspect);
+    actions.appendChild(dbxBtn);
+
+    if (row.data.creative_type === 'image') {
+      const libBtn = document.createElement('button');
+      libBtn.className = 'btn ghost small';
+      libBtn.textContent = '🖼 Library';
+      libBtn.title = 'Pick from library';
+      libBtn.onclick = () => vaSheetPickFromLibrary(row, aspect);
+      actions.appendChild(libBtn);
+
+      const lookupBtn = document.createElement('button');
+      lookupBtn.className = 'btn ghost small';
+      lookupBtn.textContent = '🔎';
+      lookupBtn.title = 'Library lookup by name';
+      lookupBtn.onclick = () => vaSheetLibLookup(row, aspect);
+      actions.appendChild(lookupBtn);
+    }
   }
 
   info.appendChild(actions);
@@ -5697,6 +6000,89 @@ function vaSheetAssetCell(row, aspect) {
 
 // Asynchronously load the thumbnail for an asset and inject it into the cell.
 // For library images we generate signed URL; for Dropbox we fetch via Edge.
+// Show an asset preview modal with the full image or playable video.
+// For Dropbox: mints a temporary download link (≈4h validity) via Edge Function
+//   (uses the existing dropbox-list path → call /files/get_temporary_link).
+// For library: uses a signed Supabase storage URL.
+async function vaSheetPreviewAsset(pick) {
+  const media = $('va-preview-media');
+  const nameEl = $('va-preview-name');
+  media.innerHTML = '<div style="padding:40px; color:var(--ink-low);">Loading…</div>';
+  nameEl.textContent = pick.name || '';
+  $('va-preview-modal').classList.add('open');
+
+  let url = null;
+  try {
+    if (pick.source === 'library' && pick.libraryPath && sb) {
+      const { data, error } = await sb.storage.from('ad-outputs').createSignedUrl(pick.libraryPath, 60 * 60);
+      if (error) throw new Error(error.message);
+      url = data?.signedUrl;
+    } else if (pick.source === 'dropbox' && pick.path) {
+      // Reuse the dropbox-temp-link flow. There's no dedicated function so we
+      // mint via a small inline call using the existing creds.
+      const c = vaCreds();
+      const r = await fetch(`${$('sb-url').value}/functions/v1/dropbox-temp-link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${$('sb-key').value}`,
+        },
+        body: JSON.stringify({
+          path: pick.path,
+          dropbox_app_key: c.dbxKey,
+          dropbox_app_secret: c.dbxSecret,
+          dropbox_refresh_token: c.dbxRefresh,
+          dropbox_team_member_id: c.dbxTeamId || undefined,
+          personal_root: pick.root === 'personal',
+        }),
+      });
+      if (!r.ok) throw new Error(`Failed to load preview (${r.status})`);
+      const data = await r.json();
+      if (data.error) throw new Error(data.error);
+      url = data.url;
+    } else if (pick.source === 'existing') {
+      media.innerHTML = '<div style="padding:40px; color:var(--ink-low); text-align:center;">Existing creative — preview not available.<br>Open in Ads Manager to view.</div>';
+      return;
+    }
+
+    if (!url) throw new Error('Could not load asset URL');
+
+    if (pick.kind === 'video') {
+      const video = document.createElement('video');
+      video.src = url;
+      video.controls = true;
+      video.autoplay = true;
+      video.style.cssText = 'max-width:90vw; max-height:80vh; border-radius:8px;';
+      media.innerHTML = '';
+      media.appendChild(video);
+    } else {
+      const img = document.createElement('img');
+      img.src = url;
+      img.style.cssText = 'max-width:90vw; max-height:80vh; border-radius:8px; object-fit:contain;';
+      media.innerHTML = '';
+      media.appendChild(img);
+    }
+  } catch (e) {
+    media.innerHTML = `<div style="padding:40px; color:var(--danger); text-align:center;">${escape(e.message)}</div>`;
+  }
+}
+
+function vaSheetClosePreview() {
+  $('va-preview-modal').classList.remove('open');
+  // Stop any playing video to release the connection
+  $('va-preview-media').innerHTML = '';
+}
+
+$('va-preview-close').onclick = vaSheetClosePreview;
+$('va-preview-modal').onclick = (e) => {
+  if (e.target.id === 'va-preview-modal') vaSheetClosePreview();
+};
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('va-preview-modal').classList.contains('open')) {
+    vaSheetClosePreview();
+  }
+});
+
 const _dbxThumbCache = new Map();   // path → data URL (in memory only — base64 is big)
 const DBX_THUMB_LS_KEY = 'dbx-thumb-cache-v1';
 // Hydrate from localStorage (small images only)
@@ -5788,7 +6174,7 @@ async function vaSheetLibLookup(row, aspect) {
   // Match aspect for the slot
   const aspectKey = aspect;
   const { data, error } = await sb.from('variants')
-    .select('id, output_path, display_name, aspect, prompt')
+    .select('id, output_path, display_name, aspect, final_prompt')
     .eq('status', 'completed')
     .eq('aspect', aspectKey)
     .ilike('display_name', `%${query.trim()}%`)
