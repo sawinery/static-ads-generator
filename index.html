@@ -108,16 +108,16 @@
     min-height:300px;
   }
   table.va-sheet {
-    border-collapse:collapse; width:100%; font-size:12px;
+    border-collapse:collapse; width:100%; font-size:13px;
   }
   table.va-sheet thead th {
     position:sticky; top:0; background:var(--panel-2);
-    text-align:left; padding:8px 10px; font-weight:600; font-size:11px;
+    text-align:left; padding:10px 12px; font-weight:600; font-size:12px;
     text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-low);
     border-bottom:1px solid var(--line); z-index:2;
   }
   table.va-sheet tbody td {
-    padding:6px 8px; border-bottom:1px solid var(--line);
+    padding:10px 12px; border-bottom:1px solid var(--line);
     vertical-align:top;
   }
   table.va-sheet tbody tr.va-row:hover { background:rgba(255,255,255,0.02); }
@@ -126,49 +126,131 @@
   table.va-sheet tbody tr.va-row.is-success    { background:rgba(80,200,120,0.05); }
 
   .va-row input[type="text"], .va-row input[type="url"], .va-row select, .va-row textarea {
-    width:100%; padding:5px 7px; font-size:12px; background:var(--bg);
+    width:100%; padding:7px 9px; font-size:13px; background:var(--bg);
     border:1px solid var(--line); border-radius:4px; color:var(--ink);
     font-family:inherit;
   }
   .va-row input:focus, .va-row select:focus, .va-row textarea:focus {
     outline:none; border-color:var(--accent);
   }
-  .va-row textarea { min-height:34px; resize:vertical; font-family:inherit; }
-  .va-row .va-cell-asset {
-    display:flex; gap:4px; flex-wrap:wrap; align-items:center;
+  .va-row textarea { min-height:60px; resize:vertical; font-family:inherit; }
+
+  /* Cells that open the side editor for multi-value fields */
+  .va-cell-multi {
+    cursor:pointer; padding:7px 9px; min-height:36px;
+    background:var(--bg); border:1px solid var(--line); border-radius:4px;
+    display:flex; align-items:center; justify-content:space-between; gap:6px;
+    color:var(--ink-low); font-size:13px;
   }
-  .va-row .va-cell-asset .pick-name {
-    flex:1 1 100%; padding:3px 5px; background:var(--bg); border-radius:3px;
-    font-size:11px; color:var(--ink-low);
+  .va-cell-multi:hover { border-color:var(--accent); }
+  .va-cell-multi .preview { flex:1; min-width:0; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; color:var(--ink); }
+  .va-cell-multi .preview.empty { color:var(--ink-low); font-style:italic; }
+  .va-cell-multi .count {
+    font-size:11px; padding:2px 6px; border-radius:10px;
+    background:var(--panel-2); color:var(--ink-low); flex-shrink:0;
+  }
+  .va-cell-multi .count.has { background:var(--accent); color:#0e0f12; }
+
+  /* Asset cells with thumbnails */
+  .va-row .va-cell-asset {
+    display:flex; gap:6px; flex-wrap:wrap; align-items:flex-start;
+  }
+  .va-row .va-cell-asset .thumb {
+    width:60px; height:60px; border-radius:4px; background:var(--panel-2);
+    overflow:hidden; flex-shrink:0; position:relative;
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .va-row .va-cell-asset .thumb img,
+  .va-row .va-cell-asset .thumb video {
+    width:100%; height:100%; object-fit:cover; display:block;
+  }
+  .va-row .va-cell-asset .thumb .placeholder {
+    font-size:24px; color:var(--ink-low);
+  }
+  .va-row .va-cell-asset .info {
+    flex:1; min-width:0; display:flex; flex-direction:column; gap:4px;
+  }
+  .va-row .va-cell-asset .info .pick-name {
+    font-size:12px; color:var(--ink-low);
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
-  .va-row .va-cell-asset .pick-name.has-pick { color:var(--accent); }
+  .va-row .va-cell-asset .info .pick-name.has-pick { color:var(--ink); }
+  .va-row .va-cell-asset .info .actions {
+    display:flex; gap:3px; flex-wrap:wrap;
+  }
   .va-row .va-cell-asset button {
-    font-size:10px; padding:3px 6px;
+    font-size:11px; padding:4px 7px;
   }
   .va-row .va-cell-status {
-    font-size:11px; font-family:var(--mono); text-align:center;
+    font-size:12px; font-family:var(--mono); text-align:center;
   }
   .va-row .va-cell-actions {
-    display:flex; gap:3px; justify-content:flex-end;
+    display:flex; gap:4px; justify-content:flex-end; flex-wrap:wrap;
   }
   .va-row .va-cell-actions button {
-    padding:3px 7px; font-size:11px;
+    padding:5px 9px; font-size:12px;
   }
   .va-row-handle {
-    color:var(--ink-low); font-family:var(--mono); font-size:10px;
-    text-align:center; padding-top:8px;
+    color:var(--ink-low); font-family:var(--mono); font-size:11px;
+    text-align:center; padding-top:12px;
   }
   .va-creative-type-toggle {
     display:flex; gap:0; border:1px solid var(--line); border-radius:4px;
-    overflow:hidden; font-size:10px;
+    overflow:hidden; font-size:12px;
   }
   .va-creative-type-toggle button {
-    flex:1; padding:4px 6px; background:var(--bg); border:none; color:var(--ink-low);
-    cursor:pointer; font-size:10px;
+    flex:1; padding:6px 10px; background:var(--bg); border:none; color:var(--ink-low);
+    cursor:pointer; font-size:12px;
   }
   .va-creative-type-toggle button.active {
     background:var(--accent); color:#0e0f12;
+  }
+
+  /* Side drawer for editing multi-value cells */
+  .va-drawer-bg {
+    position:fixed; inset:0; background:rgba(0,0,0,0.5);
+    z-index:998; display:none;
+  }
+  .va-drawer-bg.open { display:block; }
+  .va-drawer {
+    position:fixed; top:0; right:0; bottom:0; width:min(560px, 100vw);
+    background:var(--panel); border-left:1px solid var(--line);
+    z-index:999; transform:translateX(100%);
+    transition:transform 0.2s ease; display:flex; flex-direction:column;
+  }
+  .va-drawer.open { transform:translateX(0); }
+  .va-drawer header {
+    padding:14px 18px; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:10px;
+  }
+  .va-drawer header h3 { margin:0; font-size:14px; }
+  .va-drawer .body { flex:1; overflow:auto; padding:18px; }
+  .va-drawer .body p.hint { margin:0 0 14px; }
+  .va-drawer .item {
+    display:flex; gap:8px; align-items:flex-start; margin-bottom:10px;
+  }
+  .va-drawer .item .num {
+    width:24px; height:24px; flex-shrink:0; border-radius:50%;
+    background:var(--panel-2); color:var(--ink-low); font-family:var(--mono);
+    font-size:11px; display:flex; align-items:center; justify-content:center;
+    margin-top:6px;
+  }
+  .va-drawer .item textarea, .va-drawer .item input {
+    flex:1; padding:8px 10px; font-size:13px; background:var(--bg);
+    border:1px solid var(--line); border-radius:4px; color:var(--ink);
+    font-family:inherit;
+  }
+  .va-drawer .item textarea { min-height:80px; resize:vertical; }
+  .va-drawer .item .del {
+    flex-shrink:0; padding:6px 10px; background:transparent; border:1px solid var(--line);
+    color:var(--ink-low); border-radius:4px; cursor:pointer; margin-top:4px;
+  }
+  .va-drawer .item .del:hover { border-color:var(--danger); color:var(--danger); }
+  .va-drawer footer {
+    padding:14px 18px; border-top:1px solid var(--line);
+    display:flex; gap:8px;
   }
   .va-submissions-details {
     border:1px solid var(--line); border-radius:var(--radius); padding:10px 14px;
@@ -1015,6 +1097,21 @@
     <div class="err" id="va-dup-err"></div>
   </div>
 </div>
+
+<!-- Side drawer for editing multi-value sheet cells -->
+<div class="va-drawer-bg" id="va-drawer-bg"></div>
+<aside class="va-drawer" id="va-drawer">
+  <header>
+    <h3 id="va-drawer-title">Edit</h3>
+    <span style="flex:1"></span>
+    <button class="btn ghost small" id="va-drawer-done">Done</button>
+  </header>
+  <div class="body">
+    <p class="hint" id="va-drawer-hint">Edits save automatically. Press Esc or click outside to close.</p>
+    <div id="va-drawer-items"></div>
+    <button class="btn ghost small" id="va-drawer-add" style="margin-top:8px;">+ Add another</button>
+  </div>
+</aside>
 
 <div class="modal-bg" id="va-template-modal">
   <div class="modal" style="width:min(720px, 92vw); max-height:85vh; display:flex; flex-direction:column;">
@@ -5009,15 +5106,16 @@ function vaSheetNewRow(data = {}) {
       ig_id: '',
       ig_label: '',
       creative_type: 'video',
-      pick_9_16: null,    // {source, kind, path?, name, root?, libraryPath?, metaId?, metaHash?}
+      pick_9_16: null,
       pick_1_1: null,
-      primary_text: '',
-      headline: '',
+      // Arrays — Meta's dynamic creative ads support multiple variants
+      primary_texts: [''],
+      headlines: [''],
       description: '',
       link_url: '',
       cta_type: 'LEARN_MORE',
       disable_enh: true,
-      status: 'draft',    // 'draft' | 'submitting' | 'success' | 'failed'
+      status: 'draft',
       error: '',
       submitted_job_id: null,
       source_ad_id: null,
@@ -5036,6 +5134,19 @@ function vaSheetLoad() {
     const raw = localStorage.getItem(VA_SHEET_KEY);
     if (raw) vaSheetRows = JSON.parse(raw) || [];
   } catch (_) { vaSheetRows = []; }
+  // Migrate from old single-string schema
+  for (const r of vaSheetRows) {
+    if (typeof r.data.primary_text === 'string') {
+      r.data.primary_texts = [r.data.primary_text];
+      delete r.data.primary_text;
+    }
+    if (typeof r.data.headline === 'string') {
+      r.data.headlines = [r.data.headline];
+      delete r.data.headline;
+    }
+    if (!Array.isArray(r.data.primary_texts)) r.data.primary_texts = [''];
+    if (!Array.isArray(r.data.headlines)) r.data.headlines = [''];
+  }
   if (vaSheetRows.length === 0) {
     vaSheetRows.push(vaSheetNewRow());
   }
@@ -5079,11 +5190,40 @@ function vaSheetRowEl(row, idx) {
 
   // Ad set — dropdown using all loaded ad sets (cache from combo-adset items)
   const tdAdset = document.createElement('td');
+  const adsetWrap = document.createElement('div');
+  adsetWrap.style.cssText = 'display:flex; gap:4px; align-items:center;';
   const adsetSelect = vaMakeMiniSelect('combo-adset', row.data.ad_set_id, (item) => {
     update('ad_set_id', item ? item.id : '');
     update('ad_set_label', item ? item.label : '');
+    vaSheetRender();   // re-render to show/hide warning
   });
-  tdAdset.appendChild(adsetSelect);
+  adsetSelect.style.flex = '1';
+  adsetWrap.appendChild(adsetSelect);
+  if (row.data.ad_set_id) {
+    const dupBtn = document.createElement('button');
+    dupBtn.className = 'btn ghost small';
+    dupBtn.textContent = '⎘';
+    dupBtn.title = 'Duplicate this ad set';
+    dupBtn.style.padding = '5px 8px';
+    dupBtn.onclick = () => vaSheetOpenDuplicateAdset(row);
+    adsetWrap.appendChild(dupBtn);
+  }
+  tdAdset.appendChild(adsetWrap);
+  // Show dynamic-creative warning if the picked ad set has it
+  const adsetItems = document.getElementById('combo-adset')?.__items || [];
+  const adsetItem = adsetItems.find(i => i.id === row.data.ad_set_id);
+  if (adsetItem?._raw?.is_dynamic_creative) {
+    const warn = document.createElement('div');
+    warn.style.cssText = 'margin-top:4px; padding:5px 7px; font-size:11px; background:rgba(255, 200, 0, 0.08); border:1px solid rgba(255, 200, 0, 0.4); border-radius:4px; color:#e0c060;';
+    warn.innerHTML = '⚡ Dynamic creative — only 1 ad allowed. Click ⎘ to duplicate the ad set first.';
+    tdAdset.appendChild(warn);
+  }
+  if (adsetItem?._raw?.smart_promotion_type) {
+    const warn = document.createElement('div');
+    warn.style.cssText = 'margin-top:4px; padding:5px 7px; font-size:11px; background:rgba(255, 80, 80, 0.10); border:1px solid rgba(255, 80, 80, 0.4); border-radius:4px; color:#ff8080;';
+    warn.innerHTML = '🚫 Guided creation — API can\'t add ads. Pick a different ad set.';
+    tdAdset.appendChild(warn);
+  }
   tr.appendChild(tdAdset);
 
   // Page
@@ -5134,24 +5274,14 @@ function vaSheetRowEl(row, idx) {
   td11.appendChild(vaSheetAssetCell(row, '1:1'));
   tr.appendChild(td11);
 
-  // Primary text
+  // Primary text — clickable preview, opens drawer
   const tdPrimary = document.createElement('td');
-  const primaryArea = document.createElement('textarea');
-  primaryArea.value = row.data.primary_text;
-  primaryArea.placeholder = 'Primary text';
-  primaryArea.oninput = () => update('primary_text', primaryArea.value);
-  tdPrimary.appendChild(primaryArea);
+  tdPrimary.appendChild(vaSheetMultiCell(row, 'primary_texts', 'Primary text', { textarea: true }));
   tr.appendChild(tdPrimary);
 
-  // Headline
+  // Headline — clickable preview, opens drawer
   const tdHeadline = document.createElement('td');
-  const headlineInput = document.createElement('input');
-  headlineInput.type = 'text';
-  headlineInput.maxLength = 40;
-  headlineInput.value = row.data.headline;
-  headlineInput.placeholder = 'Headline';
-  headlineInput.oninput = () => update('headline', headlineInput.value);
-  tdHeadline.appendChild(headlineInput);
+  tdHeadline.appendChild(vaSheetMultiCell(row, 'headlines', 'Headline', { maxLength: 40 }));
   tr.appendChild(tdHeadline);
 
   // Destination URL
@@ -5270,11 +5400,206 @@ function vaMakeMiniSelect(masterComboId, currentId, onChange) {
   return sel;
 }
 
+// Open the existing duplicate-adset modal but track which row to assign the
+// new ad set to once it's created.
+let vaSheetDupTargetRow = null;
+
+function vaSheetOpenDuplicateAdset(row) {
+  if (!row.data.ad_set_id) { alert('Pick an ad set first'); return; }
+  vaSheetDupTargetRow = row;
+  // Pre-fill the duplicate modal with this row's ad set
+  const items = document.getElementById('combo-adset')?.__items || [];
+  const item = items.find(i => i.id === row.data.ad_set_id);
+  if (!item) { alert('Ad set not found in loaded options'); return; }
+  // The legacy modal reads from combo-adset's value, so we set it temporarily
+  const adsetCombo = document.getElementById('combo-adset');
+  const prevValue = adsetCombo.__getValue();
+  adsetCombo.__setValue(row.data.ad_set_id);
+
+  const baseName = item.label.replace(/\s*\(.*\)\s*$/, '');
+  $('va-dup-source').textContent = `Source: ${item.label} (${item.id})`;
+  $('va-dup-name').value = `${baseName} — duplicate`;
+  $('va-dup-err').textContent = '';
+  $('va-dup-modal').classList.add('open');
+  setTimeout(() => $('va-dup-name').focus(), 50);
+
+  // Restore the legacy combo's value when modal closes (we don't want to
+  // permanently change it). Use one-shot listener.
+  const restore = () => {
+    if (!$('va-dup-modal').classList.contains('open')) {
+      adsetCombo.__setValue(prevValue);
+      observer.disconnect();
+    }
+  };
+  const observer = new MutationObserver(restore);
+  observer.observe($('va-dup-modal'), { attributes: true, attributeFilter: ['class'] });
+}
+
+// Hook the duplicate-create flow to also update the target row
+const _origDupCreate = $('va-dup-create').onclick;
+$('va-dup-create').onclick = async () => {
+  if (vaSheetDupTargetRow) {
+    // Run the existing flow (which creates duplicate + reloads options)
+    await _origDupCreate.call($('va-dup-create'));
+    // After creation: combo-adset has been set to the new id by the original
+    // handler. Apply that to the target row.
+    const newId = document.getElementById('combo-adset').__getValue();
+    if (newId) {
+      const item = document.getElementById('combo-adset').__items.find(i => i.id === newId);
+      vaSheetDupTargetRow.data.ad_set_id = newId;
+      vaSheetDupTargetRow.data.ad_set_label = item?.label || newId;
+      vaSheetSave();
+      vaSheetRender();
+    }
+    vaSheetDupTargetRow = null;
+  } else {
+    await _origDupCreate.call($('va-dup-create'));
+  }
+};
+
+// Multi-value cell: shows preview text, click to open drawer for editing
+function vaSheetMultiCell(row, key, label, opts = {}) {
+  const arr = row.data[key];
+  const wrap = document.createElement('div');
+  wrap.className = 'va-cell-multi';
+
+  const filled = arr.filter(v => v && v.trim()).length;
+  const preview = document.createElement('div');
+  preview.className = 'preview' + (filled === 0 ? ' empty' : '');
+  preview.textContent = filled === 0 ? `Click to add ${label.toLowerCase()}` : (arr.find(v => v) || '');
+
+  const count = document.createElement('div');
+  count.className = 'count' + (filled > 0 ? ' has' : '');
+  count.textContent = `${filled}`;
+
+  wrap.appendChild(preview);
+  wrap.appendChild(count);
+
+  wrap.onclick = () => vaSheetOpenDrawer(row, key, label, opts);
+
+  return wrap;
+}
+
+// Side drawer for editing arrays of strings (primary texts, headlines)
+let vaDrawerCurrent = null;  // { row, key, opts }
+
+function vaSheetOpenDrawer(row, key, label, opts = {}) {
+  vaDrawerCurrent = { row, key, opts };
+  $('va-drawer-title').textContent = `Edit ${label.toLowerCase()}s`;
+  $('va-drawer-hint').innerHTML =
+    `Add up to 5 variants. Meta's dynamic creative will A/B test them. ` +
+    `Edits save automatically. Press Esc or click outside to close.`;
+  vaSheetRenderDrawer();
+  $('va-drawer-bg').classList.add('open');
+  $('va-drawer').classList.add('open');
+}
+
+function vaSheetCloseDrawer() {
+  $('va-drawer-bg').classList.remove('open');
+  $('va-drawer').classList.remove('open');
+  // Clean up empty trailing items but keep at least one entry
+  if (vaDrawerCurrent) {
+    const arr = vaDrawerCurrent.row.data[vaDrawerCurrent.key];
+    while (arr.length > 1 && (!arr[arr.length - 1] || !arr[arr.length - 1].trim())) {
+      arr.pop();
+    }
+    if (arr.length === 0) arr.push('');
+    vaSheetSave();
+    vaSheetRender();
+  }
+  vaDrawerCurrent = null;
+}
+
+function vaSheetRenderDrawer() {
+  if (!vaDrawerCurrent) return;
+  const { row, key, opts } = vaDrawerCurrent;
+  const arr = row.data[key];
+  const items = $('va-drawer-items');
+  items.innerHTML = '';
+  arr.forEach((val, i) => {
+    const itemRow = document.createElement('div');
+    itemRow.className = 'item';
+
+    const num = document.createElement('div');
+    num.className = 'num';
+    num.textContent = (i + 1).toString();
+    itemRow.appendChild(num);
+
+    let input;
+    if (opts.textarea) {
+      input = document.createElement('textarea');
+    } else {
+      input = document.createElement('input');
+      input.type = 'text';
+      if (opts.maxLength) input.maxLength = opts.maxLength;
+    }
+    input.value = val;
+    input.placeholder = `Variant ${i + 1}`;
+    input.oninput = () => {
+      arr[i] = input.value;
+      vaSheetSave();
+    };
+    itemRow.appendChild(input);
+
+    if (arr.length > 1) {
+      const del = document.createElement('button');
+      del.className = 'del';
+      del.textContent = '×';
+      del.title = 'Delete this variant';
+      del.onclick = () => {
+        arr.splice(i, 1);
+        vaSheetSave();
+        vaSheetRenderDrawer();
+      };
+      itemRow.appendChild(del);
+    }
+
+    items.appendChild(itemRow);
+  });
+
+  // Hide "Add another" if at max
+  $('va-drawer-add').style.display = arr.length >= 5 ? 'none' : '';
+}
+
+$('va-drawer-add').onclick = () => {
+  if (!vaDrawerCurrent) return;
+  vaDrawerCurrent.row.data[vaDrawerCurrent.key].push('');
+  vaSheetSave();
+  vaSheetRenderDrawer();
+};
+$('va-drawer-done').onclick = vaSheetCloseDrawer;
+$('va-drawer-bg').onclick = vaSheetCloseDrawer;
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && vaDrawerCurrent) vaSheetCloseDrawer();
+});
+
 function vaSheetAssetCell(row, aspect) {
   const wrap = document.createElement('div');
   wrap.className = 'va-cell-asset';
   const pickKey = aspect === '9:16' ? 'pick_9_16' : 'pick_1_1';
   const pick = row.data[pickKey];
+
+  // Thumbnail
+  const thumb = document.createElement('div');
+  thumb.className = 'thumb';
+  if (pick) {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'placeholder';
+    placeholder.textContent = pick.kind === 'video' ? '🎬' : '🖼';
+    thumb.appendChild(placeholder);
+    // Async-load real thumbnail
+    vaSheetLoadAssetThumb(thumb, pick).catch(() => {});
+  } else {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'placeholder';
+    placeholder.textContent = aspect === '9:16' ? '📱' : '⬜';
+    thumb.appendChild(placeholder);
+  }
+  wrap.appendChild(thumb);
+
+  // Info column
+  const info = document.createElement('div');
+  info.className = 'info';
 
   const nameDiv = document.createElement('div');
   nameDiv.className = 'pick-name';
@@ -5285,30 +5610,32 @@ function vaSheetAssetCell(row, aspect) {
   } else {
     nameDiv.textContent = `No ${row.data.creative_type} selected`;
   }
-  wrap.appendChild(nameDiv);
+  info.appendChild(nameDiv);
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
 
   const dbxBtn = document.createElement('button');
   dbxBtn.className = 'btn ghost small';
-  dbxBtn.textContent = '📦';
+  dbxBtn.textContent = '📦 Dropbox';
   dbxBtn.title = 'Pick from Dropbox';
   dbxBtn.onclick = () => vaSheetPickFromDropbox(row, aspect);
-  wrap.appendChild(dbxBtn);
+  actions.appendChild(dbxBtn);
 
   if (row.data.creative_type === 'image') {
     const libBtn = document.createElement('button');
     libBtn.className = 'btn ghost small';
-    libBtn.textContent = '🖼';
+    libBtn.textContent = '🖼 Library';
     libBtn.title = 'Pick from library';
     libBtn.onclick = () => vaSheetPickFromLibrary(row, aspect);
-    wrap.appendChild(libBtn);
+    actions.appendChild(libBtn);
 
-    // Also allow library lookup by name — quick text input
     const lookupBtn = document.createElement('button');
     lookupBtn.className = 'btn ghost small';
     lookupBtn.textContent = '🔎';
     lookupBtn.title = 'Library lookup by name';
     lookupBtn.onclick = () => vaSheetLibLookup(row, aspect);
-    wrap.appendChild(lookupBtn);
+    actions.appendChild(lookupBtn);
   }
 
   if (pick) {
@@ -5321,10 +5648,37 @@ function vaSheetAssetCell(row, aspect) {
       vaSheetSave();
       vaSheetRender();
     };
-    wrap.appendChild(clearBtn);
+    actions.appendChild(clearBtn);
   }
 
+  info.appendChild(actions);
+  wrap.appendChild(info);
+
   return wrap;
+}
+
+// Asynchronously load the thumbnail for an asset and inject it into the cell.
+// For library images we generate signed URL; for Dropbox we'd need a separate
+// fetch (skipped for now — emoji placeholder is sufficient).
+async function vaSheetLoadAssetThumb(thumbEl, pick) {
+  if (pick.source === 'library' && pick.libraryPath && sb) {
+    // Need a signed URL to display. Use the existing helper.
+    const url = signedOutputUrl(pick.libraryPath);
+    if (url) {
+      const img = document.createElement('img');
+      img.src = url;
+      img.loading = 'lazy';
+      thumbEl.innerHTML = '';
+      thumbEl.appendChild(img);
+    }
+    return;
+  }
+  if (pick.source === 'existing' && pick.kind === 'image' && pick.metaHash) {
+    // Could fetch Meta image url by hash here, but skip for now
+    return;
+  }
+  // Dropbox thumbs would need a get_thumbnail call — skip for now,
+  // keep emoji placeholder.
 }
 
 // Simple library lookup: prompt for ad name, look up in variants table, pick best match
@@ -5447,7 +5801,11 @@ async function vaSheetSubmitRow(row) {
   if (!d.name) { alert('Row needs an ad name'); return; }
   if (!d.ad_set_id) { alert('Row needs an ad set'); return; }
   if (!d.page_id)   { alert('Row needs a page'); return; }
-  if (!d.primary_text) { alert('Row needs primary text'); return; }
+
+  // Filter out empty strings
+  const primaries = (d.primary_texts || []).filter(t => t && t.trim());
+  const heads     = (d.headlines || []).filter(t => t && t.trim());
+  if (primaries.length === 0) { alert('Row needs at least one primary text'); return; }
   if (!d.link_url)  { alert('Row needs a destination URL'); return; }
   if (!d.pick_9_16 && !d.pick_1_1) { alert('Row needs at least one creative (9:16 or 1:1)'); return; }
 
@@ -5477,8 +5835,13 @@ async function vaSheetSubmitRow(row) {
       ad_set_id: d.ad_set_id,
       page_id: d.page_id,
       instagram_actor_id: d.ig_id || null,
-      primary_text: d.primary_text,
-      headline: d.headline || null,
+      // First text is the "primary" used in single-creative path. Extra
+      // texts go into a JSON column the worker reads to build dynamic
+      // creative variants.
+      primary_text: primaries[0],
+      primary_texts_extra: primaries.length > 1 ? primaries.slice(1) : null,
+      headline: heads[0] || null,
+      headlines_extra: heads.length > 1 ? heads.slice(1) : null,
       description: d.description || null,
       link_url: d.link_url,
       cta_type: d.cta_type,
