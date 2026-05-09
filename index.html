@@ -39,17 +39,62 @@
 
   /* ---- layout ---- */
   header {
-    display:flex; align-items:center; justify-content:space-between;
+    display:flex; align-items:center; gap:24px;
     padding:14px 24px; border-bottom:1px solid var(--line);
     background:linear-gradient(180deg, var(--panel) 0%, var(--bg) 100%);
   }
   header h1 { font-size:15px; margin:0; letter-spacing:.02em; font-weight:600; }
   header h1 span { color:var(--accent); }
-  header .meta { font-family:var(--mono); font-size:11px; color:var(--ink-low); }
+  header .meta { font-family:var(--mono); font-size:11px; color:var(--ink-low); margin-left:auto; }
 
-  main { display:grid; grid-template-columns: 380px 1fr; gap:0; min-height:calc(100vh - 51px); }
+  /* Top-level page tabs (Static images / Video ads) */
+  .page-tabs {
+    display:flex; gap:4px; padding:3px;
+    background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius);
+  }
+  .page-tab {
+    background:transparent; color:var(--ink-dim); border:0;
+    padding:6px 14px; border-radius:4px; font-size:12px; font-weight:500;
+    cursor:pointer;
+  }
+  .page-tab.active { background:var(--accent); color:#0e0f12; }
+  .page-tab:hover:not(.active) { color:var(--ink); }
+
+  .page { display:grid; grid-template-columns: 380px 1fr; gap:0; min-height:calc(100vh - 51px); }
   .pane-left  { border-right:1px solid var(--line); padding:20px; overflow-y:auto; }
   .pane-right { padding:20px; overflow:auto; }
+
+  /* Video-ad-specific bits */
+  .va-pick-row {
+    display:flex; align-items:center; gap:6px;
+    padding:8px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius);
+    margin-top:4px;
+  }
+  .va-pick-name {
+    flex:1; min-width:0; font-family:var(--mono); font-size:11px;
+    color:var(--ink-low); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .va-pick-row.has-pick .va-pick-name { color:var(--accent); }
+
+  .va-list { display:flex; flex-direction:column; gap:8px; }
+  .va-card {
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    padding:12px 14px; display:flex; gap:12px; align-items:center;
+  }
+  .va-card .va-card-name { flex:1; min-width:0; font-weight:600; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .va-card .va-card-status {
+    font-family:var(--mono); font-size:10.5px; padding:3px 8px; border-radius:3px;
+    text-transform:uppercase; letter-spacing:.06em;
+  }
+  .va-card .va-card-status.pending,
+  .va-card .va-card-status.uploading,
+  .va-card .va-card-status.processing,
+  .va-card .va-card-status.creating {
+    background:rgba(241, 196, 15, 0.18); color:#f5c842;
+  }
+  .va-card .va-card-status.ready  { background:rgba(46, 204, 113, 0.20); color:var(--accent); }
+  .va-card .va-card-status.failed { background:rgba(231, 76, 60, 0.18); color:var(--danger); }
+  .va-card .va-card-meta { font-family:var(--mono); font-size:10px; color:var(--ink-low); }
 
   .card {
     background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
@@ -352,10 +397,14 @@
 
 <header>
   <h1>meta ad generator <span>·</span> gpt-image-2</h1>
+  <div class="page-tabs" id="page-tabs">
+    <button class="page-tab active" data-page="static">Static images</button>
+    <button class="page-tab" data-page="video">Video ads</button>
+  </div>
   <div class="meta" id="conn-status">checking connection…</div>
 </header>
 
-<main>
+<main id="page-static" class="page">
   <!-- LEFT: submit form -->
   <section class="pane-left">
 
@@ -543,6 +592,133 @@
     <div id="pager" class="pager" style="display:none"></div>
   </section>
 </main>
+
+<!-- ============================================================================
+     VIDEO ADS PAGE — completely separate from the static images pipeline
+     ============================================================================ -->
+<main id="page-video" class="page" style="display:none;">
+  <section class="pane-left">
+
+    <div class="card">
+      <h2>Meta connection</h2>
+      <label>Ad Account ID</label>
+      <input id="meta-acct" placeholder="act_1234567890">
+      <div style="height:8px"></div>
+      <label>System User Access Token</label>
+      <input id="meta-token" type="password" placeholder="EAAxxxxxx…">
+      <div class="hint">Generate in Business Manager → Users → System Users → Generate Token. Needs <code style="font-size:11px">ads_management</code> scope. Saved to localStorage on this device.</div>
+      <div style="height:10px"></div>
+      <button class="btn ghost small" id="meta-save">Save</button>
+      <span class="hint" id="meta-conn-status" style="margin-left:8px;"></span>
+    </div>
+
+    <div class="card">
+      <h2>Dropbox connection</h2>
+      <label>App Key</label>
+      <input id="dbx-key" placeholder="from Dropbox app console">
+      <div style="height:8px"></div>
+      <label>App Secret</label>
+      <input id="dbx-secret" type="password">
+      <div style="height:8px"></div>
+      <label>Refresh Token</label>
+      <input id="dbx-refresh" type="password" placeholder="long-lived offline token">
+      <div class="hint">One-time setup. See README for how to generate the refresh token. All saved to localStorage.</div>
+      <div style="height:10px"></div>
+      <button class="btn ghost small" id="dbx-save">Save</button>
+      <button class="btn ghost small" id="dbx-test">Test connection</button>
+      <span class="hint" id="dbx-conn-status" style="margin-left:8px;"></span>
+    </div>
+
+    <div class="card">
+      <h2>Create video ad</h2>
+
+      <label>Ad name</label>
+      <input id="va-name" placeholder="e.g. Summer Sale - Hero - 2026-05">
+
+      <label style="margin-top:10px">Ad Set ID</label>
+      <input id="va-adset" placeholder="paste from Ads Manager URL — e.g. 6123456789012">
+      <div class="hint">Open the ad set in Ads Manager and copy the numeric ID from the URL.</div>
+
+      <label style="margin-top:10px">Page ID</label>
+      <input id="va-page" placeholder="e.g. 100123456789012">
+      <div class="hint">Your Facebook Page ID. Found at facebook.com/yourpage → About → Page Transparency.</div>
+
+      <label style="margin-top:14px">9:16 video <span class="hint" style="display:inline">(Stories/Reels)</span></label>
+      <div class="va-pick-row">
+        <span class="va-pick-name" id="va-9-16-name">No video selected</span>
+        <button class="btn ghost small" data-pick="9:16">📦 Pick from Dropbox</button>
+        <button class="btn ghost small" data-pick-clear="9:16" style="display:none">×</button>
+      </div>
+
+      <label style="margin-top:10px">1:1 video <span class="hint" style="display:inline">(Feed)</span></label>
+      <div class="va-pick-row">
+        <span class="va-pick-name" id="va-1-1-name">No video selected</span>
+        <button class="btn ghost small" data-pick="1:1">📦 Pick from Dropbox</button>
+        <button class="btn ghost small" data-pick-clear="1:1" style="display:none">×</button>
+      </div>
+
+      <label style="margin-top:14px">Primary text</label>
+      <textarea id="va-primary" placeholder="The text that appears above the video in the feed." style="min-height:100px;"></textarea>
+
+      <label style="margin-top:10px">Headline</label>
+      <input id="va-headline" placeholder="Bold heading shown below the video" maxlength="40">
+
+      <label style="margin-top:10px">Description <span class="hint" style="display:inline">(optional)</span></label>
+      <input id="va-description" placeholder="Smaller subline below the headline" maxlength="60">
+
+      <label style="margin-top:10px">Destination URL</label>
+      <input id="va-link" type="url" placeholder="https://your-store.com/landing-page">
+
+      <label style="margin-top:10px">CTA Button</label>
+      <select id="va-cta">
+        <option value="LEARN_MORE">Learn more</option>
+        <option value="SHOP_NOW">Shop now</option>
+        <option value="SIGN_UP">Sign up</option>
+        <option value="GET_OFFER">Get offer</option>
+        <option value="ORDER_NOW">Order now</option>
+        <option value="DOWNLOAD">Download</option>
+        <option value="SUBSCRIBE">Subscribe</option>
+        <option value="CONTACT_US">Contact us</option>
+        <option value="GET_QUOTE">Get quote</option>
+        <option value="BOOK_TRAVEL">Book now</option>
+        <option value="WATCH_MORE">Watch more</option>
+        <option value="APPLY_NOW">Apply now</option>
+        <option value="SEE_MORE">See more</option>
+      </select>
+
+      <button class="btn" id="va-submit" style="width:100%; margin-top:14px;">Submit video ad</button>
+      <div class="err" id="va-err"></div>
+      <div class="hint" id="va-info"></div>
+    </div>
+
+  </section>
+
+  <section class="pane-right">
+    <div class="toolbar">
+      <h2 style="margin:0;">Video ad submissions</h2>
+      <button class="btn ghost small" id="va-refresh">Refresh</button>
+    </div>
+    <div id="va-list" class="va-list"></div>
+    <div id="va-empty" class="empty">No video ads submitted yet.</div>
+  </section>
+</main>
+
+<!-- Dropbox file picker modal -->
+<div class="modal-bg" id="dbx-modal">
+  <div class="modal" style="width:min(720px, 92vw); max-height:85vh; display:flex; flex-direction:column; padding:0;">
+    <div style="padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px;">
+      <h3 style="margin:0; font-size:14px;">Pick from Dropbox</h3>
+      <span class="hint" id="dbx-modal-aspect" style="margin:0;"></span>
+      <span style="flex:1"></span>
+      <button class="btn ghost small" id="dbx-modal-up" title="Go up one folder">▲ Up</button>
+      <button class="btn ghost small" id="dbx-modal-close">Close</button>
+    </div>
+    <div style="padding:6px 14px; border-bottom:1px solid var(--line); font-family:var(--mono); font-size:11px; color:var(--ink-low);">
+      <span id="dbx-modal-path">/</span>
+    </div>
+    <div id="dbx-modal-list" style="overflow:auto; flex:1; padding:8px;"></div>
+  </div>
+</div>
 
 <!-- collection picker popover (anchored under the star button when clicked) -->
 <div class="popover-bg" id="picker-bg" style="display:none"></div>
@@ -3056,6 +3232,356 @@ $('addon').addEventListener('input', () => {
   localStorage.setItem(ADDON_KEY, $('addon').value);
   updateAddonBadge();
 });
+
+// ============================================================================
+// VIDEO ADS PAGE
+// ============================================================================
+// Self-contained module — does not touch any of the static-images state or
+// functions. Communicates with Supabase via the same `sb` client the static
+// page sets up (so the Connection panel on the static page also enables
+// video ads). Meta + Dropbox creds are stored separately in localStorage.
+
+// ---- page tab switcher ----
+document.querySelectorAll('.page-tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.page-tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const which = t.dataset.page;
+    document.getElementById('page-static').style.display = which === 'static' ? '' : 'none';
+    document.getElementById('page-video').style.display  = which === 'video'  ? '' : 'none';
+    if (which === 'video') {
+      // Refresh video ad list on tab switch (cheap, just metadata)
+      vaRefreshList();
+    }
+  };
+});
+
+// ---- Meta + Dropbox creds (localStorage) ----
+const META_KEY    = { acct: 'meta-acct', token: 'meta-token' };
+const DBX_KEY     = { key: 'dbx-key', secret: 'dbx-secret', refresh: 'dbx-refresh' };
+
+function vaLoadCreds() {
+  $('meta-acct').value    = localStorage.getItem(META_KEY.acct)  || '';
+  $('meta-token').value   = localStorage.getItem(META_KEY.token) || '';
+  $('dbx-key').value      = localStorage.getItem(DBX_KEY.key)     || '';
+  $('dbx-secret').value   = localStorage.getItem(DBX_KEY.secret)  || '';
+  $('dbx-refresh').value  = localStorage.getItem(DBX_KEY.refresh) || '';
+}
+$('meta-save').onclick = () => {
+  localStorage.setItem(META_KEY.acct,  $('meta-acct').value.trim());
+  localStorage.setItem(META_KEY.token, $('meta-token').value.trim());
+  $('meta-conn-status').textContent = 'saved';
+  $('meta-conn-status').style.color = 'var(--accent)';
+};
+$('dbx-save').onclick = () => {
+  localStorage.setItem(DBX_KEY.key,     $('dbx-key').value.trim());
+  localStorage.setItem(DBX_KEY.secret,  $('dbx-secret').value.trim());
+  localStorage.setItem(DBX_KEY.refresh, $('dbx-refresh').value.trim());
+  $('dbx-conn-status').textContent = 'saved';
+  $('dbx-conn-status').style.color = 'var(--accent)';
+};
+$('dbx-test').onclick = async () => {
+  $('dbx-conn-status').textContent = 'testing…';
+  $('dbx-conn-status').style.color = 'var(--ink-low)';
+  try {
+    const res = await dbxList('');
+    if (res.error) throw new Error(res.error);
+    $('dbx-conn-status').textContent = `OK (${res.entries?.length ?? 0} items at root)`;
+    $('dbx-conn-status').style.color = 'var(--accent)';
+  } catch (e) {
+    $('dbx-conn-status').textContent = `failed: ${e.message}`;
+    $('dbx-conn-status').style.color = 'var(--danger)';
+  }
+};
+
+function vaCreds() {
+  return {
+    metaAcct:  localStorage.getItem(META_KEY.acct)  || '',
+    metaToken: localStorage.getItem(META_KEY.token) || '',
+    dbxKey:    localStorage.getItem(DBX_KEY.key)    || '',
+    dbxSecret: localStorage.getItem(DBX_KEY.secret) || '',
+    dbxRefresh:localStorage.getItem(DBX_KEY.refresh)|| '',
+  };
+}
+
+// ---- Dropbox browser ----
+async function dbxList(path = '', cursor = null) {
+  const c = vaCreds();
+  if (!c.dbxKey || !c.dbxSecret || !c.dbxRefresh) {
+    throw new Error('Dropbox not configured. Set App Key, Secret, and Refresh Token above.');
+  }
+  if (!sb) throw new Error('Supabase not connected (Static images tab → connect first).');
+  const url = `${$('sb-url').value}/functions/v1/dropbox-list`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${$('sb-key').value}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      app_key: c.dbxKey,
+      app_secret: c.dbxSecret,
+      refresh_token: c.dbxRefresh,
+      path, cursor,
+    }),
+  });
+  return await res.json();
+}
+
+async function dbxSharedLink(path) {
+  const c = vaCreds();
+  const url = `${$('sb-url').value}/functions/v1/dropbox-shared-link`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${$('sb-key').value}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      app_key: c.dbxKey,
+      app_secret: c.dbxSecret,
+      refresh_token: c.dbxRefresh,
+      path,
+    }),
+  });
+  return await res.json();
+}
+
+// Dropbox file picker state
+let dbxModalCurrentPath = '';
+let dbxModalAspect = null;        // '9:16' | '1:1' — which slot we're picking for
+const VIDEO_EXT = /\.(mp4|mov|m4v|webm)$/i;
+
+document.querySelectorAll('[data-pick]').forEach(b => {
+  b.onclick = () => openDbxPicker(b.dataset.pick);
+});
+document.querySelectorAll('[data-pick-clear]').forEach(b => {
+  b.onclick = () => clearVideoPick(b.dataset.pickClear);
+});
+
+function clearVideoPick(aspect) {
+  if (aspect === '9:16') {
+    vaPicked['9:16'] = null;
+    $('va-9-16-name').textContent = 'No video selected';
+  } else {
+    vaPicked['1:1'] = null;
+    $('va-1-1-name').textContent = 'No video selected';
+  }
+  document.querySelector(`[data-pick-clear="${aspect}"]`).style.display = 'none';
+  const row = document.querySelector(`[data-pick="${aspect}"]`).closest('.va-pick-row');
+  row.classList.remove('has-pick');
+}
+
+const vaPicked = { '9:16': null, '1:1': null };  // each: { path, name, sharedUrl } or null
+
+async function openDbxPicker(aspect) {
+  dbxModalAspect = aspect;
+  $('dbx-modal-aspect').textContent = `for ${aspect} slot`;
+  $('dbx-modal').classList.add('open');
+  await dbxNavigate('');
+}
+
+async function dbxNavigate(path) {
+  dbxModalCurrentPath = path;
+  $('dbx-modal-path').textContent = path || '/';
+  $('dbx-modal-list').innerHTML = `<div style="padding:30px; text-align:center; color:var(--ink-low);">Loading…</div>`;
+
+  let res;
+  try {
+    res = await dbxList(path);
+  } catch (e) {
+    $('dbx-modal-list').innerHTML = `<div style="padding:30px; color:var(--danger); text-align:center;">${escape(e.message)}</div>`;
+    return;
+  }
+  if (res.error) {
+    $('dbx-modal-list').innerHTML = `<div style="padding:30px; color:var(--danger); text-align:center;">${escape(res.error)}</div>`;
+    return;
+  }
+  if (!res.entries || res.entries.length === 0) {
+    $('dbx-modal-list').innerHTML = `<div style="padding:30px; text-align:center; color:var(--ink-low);">Empty folder.</div>`;
+    return;
+  }
+
+  // Folders first, then files. Files: highlight videos as pickable, dim images.
+  const sorted = [...res.entries].sort((a, b) => {
+    if (a.tag !== b.tag) return a.tag === 'folder' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  $('dbx-modal-list').innerHTML = sorted.map(e => {
+    const isVideo = e.tag === 'file' && VIDEO_EXT.test(e.name);
+    const sizeText = e.size ? ` · ${(e.size / 1024 / 1024).toFixed(1)} MB` : '';
+    if (e.tag === 'folder') {
+      return `<div class="dbx-row" data-folder="${escape(e.path)}" style="padding:8px 10px; cursor:pointer; border-radius:4px; display:flex; align-items:center; gap:8px;">
+        <span>📁</span>
+        <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escape(e.name)}</span>
+      </div>`;
+    }
+    const icon = isVideo ? '🎬' : '🖼';
+    const dim = isVideo ? '' : 'opacity:0.4;';
+    return `<div class="dbx-row" data-file="${isVideo ? escape(e.path) : ''}" data-name="${escape(e.name)}" style="padding:8px 10px; ${isVideo ? 'cursor:pointer;' : 'cursor:not-allowed;'} border-radius:4px; display:flex; align-items:center; gap:8px; ${dim}">
+      <span>${icon}</span>
+      <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escape(e.name)}</span>
+      <span style="font-family:var(--mono); font-size:10px; color:var(--ink-low);">${sizeText}</span>
+    </div>`;
+  }).join('');
+
+  // Hover style
+  $('dbx-modal-list').querySelectorAll('.dbx-row').forEach(r => {
+    r.addEventListener('mouseenter', () => r.style.background = 'var(--panel-2)');
+    r.addEventListener('mouseleave', () => r.style.background = '');
+  });
+
+  // Folder navigation
+  $('dbx-modal-list').querySelectorAll('[data-folder]').forEach(r => {
+    r.onclick = () => dbxNavigate(r.dataset.folder);
+  });
+
+  // File pick
+  $('dbx-modal-list').querySelectorAll('[data-file]').forEach(r => {
+    if (!r.dataset.file) return;  // non-videos
+    r.onclick = async () => {
+      r.style.opacity = '0.5';
+      r.style.pointerEvents = 'none';
+      try {
+        const linkRes = await dbxSharedLink(r.dataset.file);
+        if (linkRes.error) throw new Error(linkRes.error);
+        vaPicked[dbxModalAspect] = {
+          path: r.dataset.file,
+          name: r.dataset.name,
+          sharedUrl: linkRes.url,
+        };
+        const labelEl = dbxModalAspect === '9:16' ? $('va-9-16-name') : $('va-1-1-name');
+        labelEl.textContent = r.dataset.name;
+        document.querySelector(`[data-pick-clear="${dbxModalAspect}"]`).style.display = '';
+        const row = labelEl.closest('.va-pick-row');
+        row.classList.add('has-pick');
+        $('dbx-modal').classList.remove('open');
+      } catch (e) {
+        alert('Failed to get shared link: ' + e.message);
+        r.style.opacity = '';
+        r.style.pointerEvents = '';
+      }
+    };
+  });
+}
+
+$('dbx-modal-up').onclick = () => {
+  if (!dbxModalCurrentPath) return;
+  // Strip last component
+  const parent = dbxModalCurrentPath.split('/').slice(0, -1).join('/');
+  dbxNavigate(parent);
+};
+$('dbx-modal-close').onclick = () => $('dbx-modal').classList.remove('open');
+$('dbx-modal').onclick = (e) => {
+  if (e.target.id === 'dbx-modal') $('dbx-modal').classList.remove('open');
+};
+
+// ---- video ad submit ----
+$('va-submit').onclick = async () => {
+  $('va-err').textContent = '';
+  $('va-info').textContent = '';
+  if (!sb) { $('va-err').textContent = 'Connect Supabase first (Static images tab).'; return; }
+
+  const c = vaCreds();
+  if (!c.metaAcct || !c.metaToken) { $('va-err').textContent = 'Set Meta credentials above.'; return; }
+  if (!vaPicked['9:16'] && !vaPicked['1:1']) { $('va-err').textContent = 'Pick at least one video.'; return; }
+
+  const name        = $('va-name').value.trim();
+  const adSetId     = $('va-adset').value.trim();
+  const pageId      = $('va-page').value.trim();
+  const primary     = $('va-primary').value.trim();
+  const headline    = $('va-headline').value.trim();
+  const description = $('va-description').value.trim();
+  const linkUrl     = $('va-link').value.trim();
+  const ctaType     = $('va-cta').value;
+
+  if (!name)     { $('va-err').textContent = 'Name required.'; return; }
+  if (!adSetId)  { $('va-err').textContent = 'Ad Set ID required.'; return; }
+  if (!pageId)   { $('va-err').textContent = 'Page ID required.'; return; }
+  if (!primary)  { $('va-err').textContent = 'Primary text required.'; return; }
+  if (!headline) { $('va-err').textContent = 'Headline required.'; return; }
+  if (!linkUrl)  { $('va-err').textContent = 'Destination URL required.'; return; }
+
+  const btn = $('va-submit');
+  btn.disabled = true;
+  btn.textContent = 'Submitting…';
+
+  try {
+    const row = {
+      name,
+      ad_account_id: c.metaAcct.startsWith('act_') ? c.metaAcct : `act_${c.metaAcct}`,
+      ad_set_id: adSetId,
+      page_id: pageId,
+      primary_text: primary,
+      headline,
+      description: description || null,
+      link_url: linkUrl,
+      cta_type: ctaType,
+      video_9_16_dropbox_path: vaPicked['9:16']?.path || null,
+      video_9_16_shared_url:   vaPicked['9:16']?.sharedUrl || null,
+      video_1_1_dropbox_path:  vaPicked['1:1']?.path || null,
+      video_1_1_shared_url:    vaPicked['1:1']?.sharedUrl || null,
+      status: 'pending',
+    };
+    const { error } = await sb.from('video_ad_jobs').insert(row);
+    if (error) throw new Error(error.message);
+
+    $('va-info').textContent = 'Saved. Meta upload worker not yet active — ad is in queue. (Coming in next deploy.)';
+    $('va-info').style.color = 'var(--accent)';
+
+    // Reset form (keep credentials)
+    $('va-name').value = '';
+    $('va-primary').value = '';
+    $('va-headline').value = '';
+    $('va-description').value = '';
+    clearVideoPick('9:16');
+    clearVideoPick('1:1');
+
+    vaRefreshList();
+  } catch (e) {
+    $('va-err').textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Submit video ad';
+  }
+};
+
+// ---- video ad list ----
+$('va-refresh').onclick = vaRefreshList;
+
+async function vaRefreshList() {
+  if (!sb) return;
+  const { data, error } = await sb
+    .from('video_ad_jobs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (error) { console.warn(error); return; }
+  if (!data || data.length === 0) {
+    $('va-empty').style.display = '';
+    $('va-list').innerHTML = '';
+    return;
+  }
+  $('va-empty').style.display = 'none';
+  $('va-list').innerHTML = data.map(j => `
+    <div class="va-card">
+      <div style="flex:1; min-width:0;">
+        <div class="va-card-name" title="${escape(j.name)}">${escape(j.name)}</div>
+        <div class="va-card-meta">
+          ${j.video_9_16_dropbox_path ? '9:16 ✓' : '9:16 ✗'} ·
+          ${j.video_1_1_dropbox_path ? '1:1 ✓' : '1:1 ✗'} ·
+          ${formatRelative(j.created_at)}
+          ${j.status_message ? ` · ${escape(j.status_message)}` : ''}
+        </div>
+        ${j.error ? `<div style="font-size:11px; color:var(--danger); margin-top:3px;">${escape(j.error)}</div>` : ''}
+      </div>
+      <div class="va-card-status ${j.status}">${j.status}</div>
+    </div>
+  `).join('');
+}
+
+vaLoadCreds();
 
 // ---- INIT (must be at the very end, after all `let` declarations and all
 // function definitions, so nothing is referenced before it's declared) ----
