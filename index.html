@@ -737,17 +737,29 @@
         <span id="va-ig-status" style="margin-left:auto;"></span>
       </div>
 
-      <label style="margin-top:14px">9:16 video <span class="hint" style="display:inline">(Stories/Reels)</span></label>
+      <label style="margin-top:14px">Creative type</label>
+      <div style="display:flex; gap:14px; padding:6px 0;">
+        <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
+          <input type="radio" name="va-creative-type" value="video" checked> Video
+        </label>
+        <label class="checkbox" style="text-transform:none; letter-spacing:0; color:var(--ink)">
+          <input type="radio" name="va-creative-type" value="image"> Image
+        </label>
+      </div>
+
+      <label style="margin-top:14px"><span class="va-aspect-label" data-for="9:16">9:16 video</span> <span class="hint" style="display:inline">(Stories/Reels)</span></label>
       <div class="va-pick-row">
         <span class="va-pick-name" id="va-9-16-name">No video selected</span>
-        <button class="btn ghost small" data-pick="9:16">📦 Pick from Dropbox</button>
+        <button class="btn ghost small" data-pick="9:16">📦 Dropbox</button>
+        <button class="btn ghost small va-pick-library" data-pick-lib="9:16" style="display:none">🖼 Library</button>
         <button class="btn ghost small" data-pick-clear="9:16" style="display:none">×</button>
       </div>
 
-      <label style="margin-top:10px">1:1 video <span class="hint" style="display:inline">(Feed)</span></label>
+      <label style="margin-top:10px"><span class="va-aspect-label" data-for="1:1">1:1 video</span> <span class="hint" style="display:inline">(Feed)</span></label>
       <div class="va-pick-row">
         <span class="va-pick-name" id="va-1-1-name">No video selected</span>
-        <button class="btn ghost small" data-pick="1:1">📦 Pick from Dropbox</button>
+        <button class="btn ghost small" data-pick="1:1">📦 Dropbox</button>
+        <button class="btn ghost small va-pick-library" data-pick-lib="1:1" style="display:none">🖼 Library</button>
         <button class="btn ghost small" data-pick-clear="1:1" style="display:none">×</button>
       </div>
 
@@ -848,6 +860,22 @@
   </div>
 </div>
 
+<!-- Library picker modal — pulls from gpt-image-2 generated variants -->
+<div class="modal-bg" id="va-lib-modal">
+  <div class="modal" style="width:min(900px, 92vw); max-height:85vh; display:flex; flex-direction:column; padding:0;">
+    <div style="padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px;">
+      <h3 style="margin:0; font-size:14px;">Pick from library</h3>
+      <span class="hint" id="va-lib-aspect" style="margin:0;"></span>
+      <span style="flex:1"></span>
+      <button class="btn ghost small" id="va-lib-close">Close</button>
+    </div>
+    <div style="padding:8px 14px; border-bottom:1px solid var(--line); display:flex; gap:8px; align-items:center;">
+      <input type="text" id="va-lib-search" placeholder="🔎 Search prompts / names…" style="flex:1; font-size:12px; padding:5px 8px;">
+    </div>
+    <div id="va-lib-grid" style="overflow:auto; flex:1; padding:14px; display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; align-content:start;"></div>
+  </div>
+</div>
+
 <div class="modal-bg" id="dbx-modal">
   <div class="modal" style="width:min(720px, 92vw); max-height:85vh; display:flex; flex-direction:column; padding:0;">
     <div style="padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px;">
@@ -860,6 +888,10 @@
       </div>
       <button class="btn ghost small" id="dbx-modal-up" title="Go up one folder">▲ Up</button>
       <button class="btn ghost small" id="dbx-modal-close">Close</button>
+    </div>
+    <div style="padding:8px 14px; border-bottom:1px solid var(--line); display:flex; gap:8px; align-items:center;">
+      <input type="text" id="dbx-modal-search" placeholder="🔎 Search files in this namespace…" style="flex:1; font-size:12px; padding:5px 8px;">
+      <button class="btn ghost small" id="dbx-modal-search-clear" style="display:none;" title="Clear search">×</button>
     </div>
     <div style="padding:6px 14px; border-bottom:1px solid var(--line); font-family:var(--mono); font-size:11px; color:var(--ink-low);">
       <span id="dbx-modal-path">/</span>
@@ -3583,7 +3615,39 @@ async function dbxSharedLink(path) {
 let dbxModalCurrentPath = '';
 let dbxModalAspect = null;        // '9:16' | '1:1' — which slot we're picking for
 let dbxModalRoot = 'team';        // 'team' | 'personal' — namespace selector for team accounts
+let dbxSearchActive = false;      // true when displaying search results instead of folder listing
+let dbxSearchTimer = null;        // debounce
+let vaCreativeType = 'video';     // 'video' | 'image'
 const VIDEO_EXT = /\.(mp4|mov|m4v|webm)$/i;
+
+// Creative type toggle — switches labels, picker filters, and visibility of library button
+document.querySelectorAll('input[name="va-creative-type"]').forEach(r => {
+  r.onchange = () => {
+    vaCreativeType = document.querySelector('input[name="va-creative-type"]:checked').value;
+    // Update slot labels
+    document.querySelectorAll('.va-aspect-label').forEach(el => {
+      const which = el.dataset.for;
+      el.textContent = `${which} ${vaCreativeType}`;
+    });
+    // Show/hide library button (only for image creatives)
+    document.querySelectorAll('.va-pick-library').forEach(b => {
+      b.style.display = vaCreativeType === 'image' ? '' : 'none';
+    });
+    // Update placeholder text on Dropbox button + clear current picks if mode changed
+    document.querySelectorAll('[data-pick]').forEach(b => {
+      b.textContent = '📦 Dropbox';
+    });
+    // Clear any pending picks because they're typed wrong now
+    if (vaPicked['9:16']?.kind && vaPicked['9:16'].kind !== vaCreativeType) clearVideoPick('9:16');
+    if (vaPicked['1:1']?.kind  && vaPicked['1:1'].kind  !== vaCreativeType) clearVideoPick('1:1');
+    updateEmptyLabels();
+  };
+});
+
+function updateEmptyLabels() {
+  if (!vaPicked['9:16']) $('va-9-16-name').textContent = `No ${vaCreativeType} selected`;
+  if (!vaPicked['1:1'])  $('va-1-1-name').textContent  = `No ${vaCreativeType} selected`;
+}
 
 document.querySelectorAll('[data-pick]').forEach(b => {
   b.onclick = () => openDbxPicker(b.dataset.pick);
@@ -3591,21 +3655,23 @@ document.querySelectorAll('[data-pick]').forEach(b => {
 document.querySelectorAll('[data-pick-clear]').forEach(b => {
   b.onclick = () => clearVideoPick(b.dataset.pickClear);
 });
+document.querySelectorAll('[data-pick-lib]').forEach(b => {
+  b.onclick = () => openLibPicker(b.dataset.pickLib);
+});
 
 function clearVideoPick(aspect) {
-  if (aspect === '9:16') {
-    vaPicked['9:16'] = null;
-    $('va-9-16-name').textContent = 'No video selected';
-  } else {
-    vaPicked['1:1'] = null;
-    $('va-1-1-name').textContent = 'No video selected';
-  }
+  vaPicked[aspect] = null;
+  const labelEl = aspect === '9:16' ? $('va-9-16-name') : $('va-1-1-name');
+  labelEl.textContent = `No ${vaCreativeType} selected`;
   document.querySelector(`[data-pick-clear="${aspect}"]`).style.display = 'none';
   const row = document.querySelector(`[data-pick="${aspect}"]`).closest('.va-pick-row');
   row.classList.remove('has-pick');
 }
 
-const vaPicked = { '9:16': null, '1:1': null };  // each: { path, name, sharedUrl } or null
+// vaPicked entries now have shape:
+//   { source: 'dropbox' | 'library', kind: 'video' | 'image',
+//     path, name, root?, libraryPath? }
+const vaPicked = { '9:16': null, '1:1': null };
 
 async function openDbxPicker(aspect) {
   dbxModalAspect = aspect;
@@ -3615,6 +3681,9 @@ async function openDbxPicker(aspect) {
 }
 
 async function dbxNavigate(path) {
+  dbxSearchActive = false;
+  $('dbx-modal-search').value = '';
+  $('dbx-modal-search-clear').style.display = 'none';
   dbxModalCurrentPath = path;
   $('dbx-modal-path').textContent = path || '/';
   $('dbx-modal-list').innerHTML = `<div style="padding:30px; text-align:center; color:var(--ink-low);">Loading…</div>`;
@@ -3631,8 +3700,6 @@ async function dbxNavigate(path) {
     return;
   }
 
-  // The new Edge Function returns { folders, files } separated. Build a
-  // unified list to render.
   const folderEntries = (res.folders ?? []).map(f => ({ ...f, _kind: 'folder' }));
   const fileEntries   = (res.files ?? []).map(f => ({ ...f, _kind: 'file' }));
   const all = [...folderEntries, ...fileEntries];
@@ -3642,54 +3709,102 @@ async function dbxNavigate(path) {
     return;
   }
 
-  // Folders first, then files. Files: highlight videos as pickable, dim images.
   const sorted = all.sort((a, b) => {
     if (a._kind !== b._kind) return a._kind === 'folder' ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
 
-  $('dbx-modal-list').innerHTML = sorted.map(e => {
+  renderDbxRows(sorted, /*isSearch*/ false);
+}
+
+async function dbxSearch(query) {
+  if (!query.trim()) { dbxNavigate(dbxModalCurrentPath); return; }
+  dbxSearchActive = true;
+  $('dbx-modal-search-clear').style.display = '';
+  $('dbx-modal-list').innerHTML = `<div style="padding:30px; text-align:center; color:var(--ink-low);">Searching…</div>`;
+
+  const c = vaCreds();
+  const url = `${$('sb-url').value}/functions/v1/dropbox-search`;
+  let res;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${$('sb-key').value}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        dropbox_app_key: c.dbxKey,
+        dropbox_app_secret: c.dbxSecret,
+        dropbox_refresh_token: c.dbxRefresh,
+        dropbox_team_member_id: c.dbxTeamId || undefined,
+        personal_root: dbxModalRoot === 'personal',
+        media_type: vaCreativeType,   // server filters to only matching kind
+      }),
+    });
+    res = await r.json();
+  } catch (e) {
+    $('dbx-modal-list').innerHTML = `<div style="padding:30px; color:var(--danger); text-align:center;">${escape(e.message)}</div>`;
+    return;
+  }
+  if (res.error) {
+    $('dbx-modal-list').innerHTML = `<div style="padding:30px; color:var(--danger); text-align:center;">${escape(res.error)}</div>`;
+    return;
+  }
+  if (!res.files?.length) {
+    $('dbx-modal-list').innerHTML = `<div style="padding:30px; text-align:center; color:var(--ink-low);">No matches.</div>`;
+    return;
+  }
+
+  renderDbxRows(res.files.map(f => ({ ...f, _kind: 'file' })), /*isSearch*/ true);
+}
+
+// Unified row renderer for both folder listings and search results.
+// Pickability depends on vaCreativeType (only matching media kinds are clickable).
+function renderDbxRows(entries, isSearch) {
+  $('dbx-modal-list').innerHTML = entries.map(e => {
     if (e._kind === 'folder') {
       return `<div class="dbx-row" data-folder="${escape(e.path)}" style="padding:8px 10px; cursor:pointer; border-radius:4px; display:flex; align-items:center; gap:8px;">
         <span>📁</span>
         <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escape(e.name)}</span>
       </div>`;
     }
-    const isVideo = e.kind === 'video';   // Edge Function pre-classifies file kinds
-    const icon = isVideo ? '🎬' : '🖼';
-    const dim = isVideo ? '' : 'opacity:0.4;';
+    const matchesType = e.kind === vaCreativeType;
+    const icon = e.kind === 'video' ? '🎬' : '🖼';
+    const dim = matchesType ? '' : 'opacity:0.4;';
     const sizeText = e.size ? ` · ${(e.size / 1024 / 1024).toFixed(1)} MB` : '';
-    return `<div class="dbx-row" data-file="${isVideo ? escape(e.path) : ''}" data-name="${escape(e.name)}" style="padding:8px 10px; ${isVideo ? 'cursor:pointer;' : 'cursor:not-allowed;'} border-radius:4px; display:flex; align-items:center; gap:8px; ${dim}">
+    const subText = isSearch && e.parent_path
+      ? `<div style="font-size:10px; color:var(--ink-low); font-family:var(--mono);">${escape(e.parent_path)}</div>`
+      : '';
+    return `<div class="dbx-row" data-file="${matchesType ? escape(e.path) : ''}" data-kind="${escape(e.kind)}" data-name="${escape(e.name)}" style="padding:8px 10px; ${matchesType ? 'cursor:pointer;' : 'cursor:not-allowed;'} border-radius:4px; display:flex; align-items:center; gap:8px; ${dim}">
       <span>${icon}</span>
-      <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escape(e.name)}</span>
+      <div style="flex:1; min-width:0;">
+        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escape(e.name)}</div>
+        ${subText}
+      </div>
       <span style="font-family:var(--mono); font-size:10px; color:var(--ink-low);">${sizeText}</span>
     </div>`;
   }).join('');
 
-  // Hover style
   $('dbx-modal-list').querySelectorAll('.dbx-row').forEach(r => {
     r.addEventListener('mouseenter', () => r.style.background = 'var(--panel-2)');
     r.addEventListener('mouseleave', () => r.style.background = '');
   });
 
-  // Folder navigation
   $('dbx-modal-list').querySelectorAll('[data-folder]').forEach(r => {
     r.onclick = () => dbxNavigate(r.dataset.folder);
   });
 
-  // File pick
   $('dbx-modal-list').querySelectorAll('[data-file]').forEach(r => {
-    if (!r.dataset.file) return;  // non-videos
+    if (!r.dataset.file) return;
     r.onclick = async () => {
       r.style.opacity = '0.5';
       r.style.pointerEvents = 'none';
       try {
-        // No need to pre-mint a shared link — the worker mints a fresh
-        // temporary download link at upload time.
         vaPicked[dbxModalAspect] = {
+          source: 'dropbox',
+          kind: r.dataset.kind,
           path: r.dataset.file,
           name: r.dataset.name,
-          root: dbxModalRoot,   // 'team' or 'personal' — tells worker which namespace
+          root: dbxModalRoot,
         };
         const labelEl = dbxModalAspect === '9:16' ? $('va-9-16-name') : $('va-1-1-name');
         labelEl.textContent = r.dataset.name;
@@ -3704,6 +3819,117 @@ async function dbxNavigate(path) {
       }
     };
   });
+}
+
+$('dbx-modal-search').oninput = () => {
+  if (dbxSearchTimer) clearTimeout(dbxSearchTimer);
+  const q = $('dbx-modal-search').value;
+  dbxSearchTimer = setTimeout(() => dbxSearch(q), 300);
+};
+$('dbx-modal-search-clear').onclick = () => {
+  $('dbx-modal-search').value = '';
+  dbxNavigate(dbxModalCurrentPath);
+};
+
+// ---- Library picker (gpt-image-2 generated images, for image ad mode) ----
+let vaLibAspect = null;
+let vaLibSearchTimer = null;
+let vaLibVariantsCache = [];   // cached fetched list
+
+async function openLibPicker(aspect) {
+  if (!sb) { alert('Connect Supabase first.'); return; }
+  vaLibAspect = aspect;
+  $('va-lib-aspect').textContent = `for ${aspect} slot`;
+  $('va-lib-search').value = '';
+  $('va-lib-modal').classList.add('open');
+  $('va-lib-grid').innerHTML = `<div style="grid-column:1/-1; padding:30px; text-align:center; color:var(--ink-low);">Loading…</div>`;
+
+  // Pull completed variants matching this aspect.
+  // The variants table stores aspect as one of '9:16', '1:1', '16:9'. We
+  // fetch the most recent N to keep the picker fast — search filters client-side.
+  const aspectKey = aspect;  // '9:16' or '1:1'
+  const { data, error } = await sb.from('variants')
+    .select('id, job_id, output_path, thumb_path, display_name, aspect, prompt, created_at')
+    .eq('status', 'completed')
+    .eq('aspect', aspectKey)
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (error) {
+    $('va-lib-grid').innerHTML = `<div style="grid-column:1/-1; color:var(--danger); padding:20px;">${escape(error.message)}</div>`;
+    return;
+  }
+  vaLibVariantsCache = data || [];
+  renderLibGrid('');
+}
+
+function renderLibGrid(filterText) {
+  const f = filterText.trim().toLowerCase();
+  const filtered = !f
+    ? vaLibVariantsCache
+    : vaLibVariantsCache.filter(v =>
+        (v.display_name || '').toLowerCase().includes(f) ||
+        (v.prompt || '').toLowerCase().includes(f));
+
+  if (filtered.length === 0) {
+    $('va-lib-grid').innerHTML = `<div style="grid-column:1/-1; padding:30px; text-align:center; color:var(--ink-low);">${vaLibVariantsCache.length === 0 ? 'No completed variants for this aspect yet.' : 'No matches.'}</div>`;
+    return;
+  }
+
+  $('va-lib-grid').innerHTML = filtered.map(v => {
+    const url = signedOutputUrl(v.thumb_path || v.output_path);
+    const name = v.display_name || (v.prompt ? v.prompt.slice(0, 40) : `variant ${v.id.slice(0, 8)}`);
+    return `<div class="va-lib-card" data-path="${escape(v.output_path)}" data-name="${escape(name)}" style="border:1px solid var(--line); border-radius:var(--radius); cursor:pointer; overflow:hidden; background:var(--panel-2);">
+      <div style="aspect-ratio:1/1; background:var(--bg);">
+        <img src="${url}" loading="lazy" style="width:100%; height:100%; object-fit:cover; display:block;">
+      </div>
+      <div style="padding:5px 7px; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escape(name)}">${escape(name)}</div>
+    </div>`;
+  }).join('');
+
+  $('va-lib-grid').querySelectorAll('.va-lib-card').forEach(card => {
+    card.onclick = () => {
+      vaPicked[vaLibAspect] = {
+        source: 'library',
+        kind: 'image',
+        libraryPath: card.dataset.path,
+        name: card.dataset.name,
+      };
+      const labelEl = vaLibAspect === '9:16' ? $('va-9-16-name') : $('va-1-1-name');
+      labelEl.textContent = card.dataset.name;
+      document.querySelector(`[data-pick-clear="${vaLibAspect}"]`).style.display = '';
+      const row = labelEl.closest('.va-pick-row');
+      row.classList.add('has-pick');
+      $('va-lib-modal').classList.remove('open');
+    };
+  });
+}
+
+$('va-lib-search').oninput = () => {
+  if (vaLibSearchTimer) clearTimeout(vaLibSearchTimer);
+  vaLibSearchTimer = setTimeout(() => renderLibGrid($('va-lib-search').value), 200);
+};
+$('va-lib-close').onclick = () => $('va-lib-modal').classList.remove('open');
+$('va-lib-modal').onclick = (e) => {
+  if (e.target.id === 'va-lib-modal') $('va-lib-modal').classList.remove('open');
+};
+
+// Helper: signed URL for a path in ad-outputs (Static Images uses a similar
+// helper; we make a minimal version here scoped to this picker).
+function signedOutputUrl(path) {
+  if (!path || !sb) return '';
+  // Cache signed URLs to avoid hammering the API
+  if (!window.__signedCache) window.__signedCache = new Map();
+  if (window.__signedCache.has(path)) return window.__signedCache.get(path);
+  // Fire async signing — return a placeholder URL initially, then update
+  const placeholder = `${$('sb-url').value}/storage/v1/object/sign/ad-outputs/${path}`;
+  sb.storage.from('ad-outputs').createSignedUrl(path, 60 * 60 * 23).then(({ data }) => {
+    if (data?.signedUrl) {
+      window.__signedCache.set(path, data.signedUrl);
+      // Replace any <img> already rendered with this placeholder
+      document.querySelectorAll(`img[src="${placeholder}"]`).forEach(img => img.src = data.signedUrl);
+    }
+  });
+  return placeholder;
 }
 
 $('dbx-modal-up').onclick = () => {
@@ -3769,9 +3995,27 @@ $('va-submit').onclick = async () => {
   btn.textContent = 'Submitting…';
 
   try {
-    // The worker runs without a session, so it needs the credentials on the
-    // job row. Stash them here. (For a personal tool this is fine; for
-    // multi-user, store these in a separate creds table keyed by user.)
+    // Build per-aspect path columns based on each pick's source.
+    // - source='dropbox' → write to video_X_dropbox_path / _root
+    // - source='library' → write to image_X_library_path
+    // - source='existing' → carry forward the source ad's Meta IDs/hashes,
+    //   skipping the upload step (status goes straight to 'creating')
+    const p916 = vaPicked['9:16'];
+    const p11  = vaPicked['1:1'];
+
+    function dbxPathFor(p) { return (p?.source === 'dropbox') ? p.path : null; }
+    function dbxRootFor(p) { return (p?.source === 'dropbox') ? (p.root || 'team') : 'team'; }
+    function libPathFor(p) { return (p?.source === 'library') ? p.libraryPath : null; }
+    function metaIdFor(p)   { return (p?.source === 'existing' && p.kind === 'video') ? p.metaId : null; }
+    function metaHashFor(p) { return (p?.source === 'existing' && p.kind === 'image') ? p.metaHash : null; }
+
+    // If BOTH picks are 'existing', skip the upload step entirely → start at 'creating'
+    const allExisting =
+      (p916 ? p916.source === 'existing' : true) &&
+      (p11  ? p11.source  === 'existing' : true) &&
+      (p916 || p11);   // at least one slot filled
+    const initialStatus = allExisting ? 'creating' : 'pending';
+
     const row = {
       display_name: name,
       ad_account_id: c.metaAcct.startsWith('act_') ? c.metaAcct : `act_${c.metaAcct}`,
@@ -3783,20 +4027,31 @@ $('va-submit').onclick = async () => {
       description: description || null,
       link_url: linkUrl,
       cta_type: ctaType,
-      video_9_16_dropbox_path: vaPicked['9:16']?.path || null,
-      video_9_16_dropbox_root: vaPicked['9:16']?.root || 'team',
-      video_1_1_dropbox_path:  vaPicked['1:1']?.path || null,
-      video_1_1_dropbox_root:  vaPicked['1:1']?.root || 'team',
+      creative_type: vaCreativeType,
+      video_9_16_dropbox_path: dbxPathFor(p916),
+      video_9_16_dropbox_root: dbxRootFor(p916),
+      video_1_1_dropbox_path:  dbxPathFor(p11),
+      video_1_1_dropbox_root:  dbxRootFor(p11),
+      image_9_16_library_path: libPathFor(p916),
+      image_1_1_library_path:  libPathFor(p11),
+      video_9_16_meta_id:      metaIdFor(p916),
+      video_1_1_meta_id:       metaIdFor(p11),
+      image_9_16_meta_hash:    metaHashFor(p916),
+      image_1_1_meta_hash:     metaHashFor(p11),
+      source_ad_id:            window.__sourceAdId || null,
       meta_access_token:       c.metaToken,
       dropbox_app_key:         c.dbxAppKey,
       dropbox_app_secret:      c.dbxAppSecret,
       dropbox_refresh_token:   c.dbxRefresh,
       dropbox_team_member_id:  c.dbxTeamId || null,
       disable_enhancements:    disableEnh,
-      status: 'pending',
+      status: initialStatus,
     };
     const { data: inserted, error } = await sb.from('video_ad_jobs').insert(row).select('id').single();
     if (error) throw new Error(error.message);
+
+    // Reset duplicate tracking after insert
+    window.__sourceAdId = null;
 
     // Kick the worker so the user doesn't wait for the cron tick.
     fetch(`${$('sb-url').value}/functions/v1/meta-upload-video-ad`, {
@@ -4175,7 +4430,7 @@ $('va-template-load').onclick = async () => {
   $('va-template-err').textContent = '';
 
   try {
-    const r = await fetch(`${$('sb-url').value}/functions/v1/meta-fetch-ad`, {
+    const r = await fetch(`${$('sb-url').value}/functions/v1/meta-fetch-ad-full`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -4186,8 +4441,6 @@ $('va-template-load').onclick = async () => {
     const data = await r.json();
     if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
 
-    // Fill the form. Prefer the combobox; fall back to manual field if the
-    // value isn't in the loaded items.
     function setComboOrManual(comboId, manualId, value) {
       if (!value) return;
       const combo = document.getElementById(comboId);
@@ -4201,6 +4454,11 @@ $('va-template-load').onclick = async () => {
     }
     setComboOrManual('combo-adset', 'va-adset', data.ad_set_id);
     setComboOrManual('combo-page',  'va-page',  data.page_id);
+    if (data.instagram_actor_id) {
+      const igCombo = document.getElementById('combo-ig');
+      const item = igCombo.__items.find(x => x.id === data.instagram_actor_id);
+      if (item) igCombo.__setValue(data.instagram_actor_id);
+    }
 
     if (data.primary_text) $('va-primary').value     = data.primary_text;
     if (data.headline)     $('va-headline').value    = data.headline;
@@ -4212,6 +4470,49 @@ $('va-template-load').onclick = async () => {
         ctaSel.value = data.cta_type;
       }
     }
+
+    // Switch creative type radio if source was image
+    if (data.creative_type === 'image') {
+      const radio = document.querySelector('input[name="va-creative-type"][value="image"]');
+      if (radio) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event('change'));
+      }
+    } else if (data.creative_type === 'video') {
+      const radio = document.querySelector('input[name="va-creative-type"][value="video"]');
+      if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
+    }
+
+    // Pre-fill the existing creative as "current" picks. The user can then
+    // either submit as-is to duplicate, or click × on a slot to swap.
+    const tplPicks = (() => {
+      if (data.creative_type === 'video') {
+        return {
+          '9:16': data.video_9_16_meta_id ? { source: 'existing', kind: 'video', metaId: data.video_9_16_meta_id, name: '(reusing existing video 9:16)' } : null,
+          '1:1':  data.video_1_1_meta_id  ? { source: 'existing', kind: 'video', metaId: data.video_1_1_meta_id,  name: '(reusing existing video 1:1)' } : null,
+        };
+      } else if (data.creative_type === 'image') {
+        return {
+          '9:16': data.image_9_16_meta_hash ? { source: 'existing', kind: 'image', metaHash: data.image_9_16_meta_hash, name: '(reusing existing image 9:16)' } : null,
+          '1:1':  data.image_1_1_meta_hash  ? { source: 'existing', kind: 'image', metaHash: data.image_1_1_meta_hash,  name: '(reusing existing image 1:1)' } : null,
+        };
+      }
+      return { '9:16': null, '1:1': null };
+    })();
+    if (tplPicks['9:16']) {
+      vaPicked['9:16'] = tplPicks['9:16'];
+      $('va-9-16-name').textContent = tplPicks['9:16'].name;
+      document.querySelector('[data-pick-clear="9:16"]').style.display = '';
+      document.querySelector('[data-pick="9:16"]').closest('.va-pick-row').classList.add('has-pick');
+    }
+    if (tplPicks['1:1']) {
+      vaPicked['1:1'] = tplPicks['1:1'];
+      $('va-1-1-name').textContent = tplPicks['1:1'].name;
+      document.querySelector('[data-pick-clear="1:1"]').style.display = '';
+      document.querySelector('[data-pick="1:1"]').closest('.va-pick-row').classList.add('has-pick');
+    }
+    // Track that this is a duplicate of an existing ad
+    window.__sourceAdId = adId;
 
     $('va-template-modal').classList.remove('open');
   } catch (e) {
