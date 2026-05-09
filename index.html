@@ -65,6 +65,57 @@
   .pane-right { padding:20px; overflow:auto; }
 
   /* Video-ad-specific bits */
+  /* searchable combobox (used for ad set, page, instagram pickers) */
+  .combo { position:relative; }
+  .combo .combo-input {
+    width:100%;
+    padding-right:30px;  /* room for the clear ×  */
+  }
+  .combo .combo-clear {
+    position:absolute; right:6px; top:50%; transform:translateY(-50%);
+    background:none; border:none; color:var(--ink-low); cursor:pointer;
+    font-size:18px; line-height:1; padding:0 4px;
+    display:none;
+  }
+  .combo.has-value .combo-clear { display:block; }
+  .combo .combo-list {
+    display:none;
+    position:absolute; top:100%; left:0; right:0; z-index:50;
+    margin-top:4px;
+    max-height:280px; overflow-y:auto;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:0 4px 12px rgba(0,0,0,0.3);
+  }
+  .combo.open .combo-list { display:block; }
+  .combo .combo-group {
+    padding:4px 10px;
+    font-size:10px; text-transform:uppercase; letter-spacing:0.05em;
+    color:var(--ink-low); background:var(--panel-2);
+    position:sticky; top:0;
+  }
+  .combo .combo-item {
+    padding:8px 10px;
+    font-size:12.5px;
+    cursor:pointer;
+    border-bottom:1px solid var(--line);
+    color:var(--ink);
+  }
+  .combo .combo-item:last-child { border-bottom:none; }
+  .combo .combo-item:hover, .combo .combo-item.active {
+    background:var(--panel-2);
+  }
+  .combo .combo-item.selected {
+    background:rgba(46, 204, 113, 0.10);
+  }
+  .combo .combo-item-sub {
+    font-size:10px; color:var(--ink-low); margin-top:2px;
+    font-family:var(--mono);
+  }
+  .combo .combo-empty {
+    padding:14px; text-align:center; color:var(--ink-low); font-size:12px;
+  }
+
   .va-pick-row {
     display:flex; align-items:center; gap:6px;
     padding:8px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius);
@@ -641,20 +692,42 @@
       <input id="va-name" placeholder="e.g. Summer Sale - Hero - 2026-05">
 
       <label style="margin-top:10px">Ad Set</label>
-      <select id="va-adset-select"><option value="">— pick an ad set —</option></select>
-      <div class="hint" style="display:flex; align-items:center; gap:6px;">
+      <div class="combo" id="combo-adset">
+        <input type="text" class="combo-input" placeholder="Search ad sets…" autocomplete="off">
+        <input type="hidden" class="combo-value">
+        <button type="button" class="combo-clear" title="Clear">×</button>
+        <div class="combo-list"></div>
+      </div>
+      <div class="hint" style="display:flex; align-items:center; gap:8px;">
         <a href="#" id="va-adset-manual-toggle" style="color:var(--ink-low); text-decoration:underline;">enter ID manually</a>
+        <a href="#" id="va-adset-duplicate" style="color:var(--ink-low); text-decoration:underline;">duplicate selected</a>
         <span id="va-adset-status" style="margin-left:auto;"></span>
       </div>
       <input id="va-adset" placeholder="6123456789012" style="display:none; margin-top:6px;">
 
       <label style="margin-top:10px">Page</label>
-      <select id="va-page-select"><option value="">— pick a Facebook Page —</option></select>
+      <div class="combo" id="combo-page">
+        <input type="text" class="combo-input" placeholder="Search pages…" autocomplete="off">
+        <input type="hidden" class="combo-value">
+        <button type="button" class="combo-clear" title="Clear">×</button>
+        <div class="combo-list"></div>
+      </div>
       <div class="hint" style="display:flex; align-items:center; gap:6px;">
         <a href="#" id="va-page-manual-toggle" style="color:var(--ink-low); text-decoration:underline;">enter ID manually</a>
         <span id="va-page-status" style="margin-left:auto;"></span>
       </div>
       <input id="va-page" placeholder="100123456789012" style="display:none; margin-top:6px;">
+
+      <label style="margin-top:10px">Instagram account <span class="hint" style="display:inline">(optional, for IG placements)</span></label>
+      <div class="combo" id="combo-ig">
+        <input type="text" class="combo-input" placeholder="Search Instagram accounts…" autocomplete="off">
+        <input type="hidden" class="combo-value">
+        <button type="button" class="combo-clear" title="Clear">×</button>
+        <div class="combo-list"></div>
+      </div>
+      <div class="hint" style="display:flex; align-items:center; gap:6px;">
+        <span id="va-ig-status" style="margin-left:auto;"></span>
+      </div>
 
       <label style="margin-top:14px">9:16 video <span class="hint" style="display:inline">(Stories/Reels)</span></label>
       <div class="va-pick-row">
@@ -723,6 +796,22 @@
 
 <!-- Dropbox file picker modal -->
 <!-- Template-from-existing-ad modal -->
+<!-- Duplicate ad set modal -->
+<div class="modal-bg" id="va-dup-modal">
+  <div class="modal" style="width:min(480px, 92vw);">
+    <h3 style="margin:0 0 4px;">Duplicate ad set</h3>
+    <p class="hint" style="margin-top:0;">Creates a paused copy of the selected ad set with the same campaign, targeting, budget, and schedule. Just rename it.</p>
+    <div id="va-dup-source" class="hint" style="margin-bottom:8px; color:var(--ink); font-family:var(--mono); font-size:11px;"></div>
+    <label>New name</label>
+    <input type="text" id="va-dup-name" placeholder="e.g. Summer Sale — duplicate">
+    <div class="row" style="margin-top:14px;">
+      <button class="btn ghost" id="va-dup-cancel">Cancel</button>
+      <button class="btn" id="va-dup-create">Create duplicate</button>
+    </div>
+    <div class="err" id="va-dup-err"></div>
+  </div>
+</div>
+
 <div class="modal-bg" id="va-template-modal">
   <div class="modal" style="width:min(560px, 92vw);">
     <h3 style="margin:0 0 4px;">Use existing ad as template</h3>
@@ -3536,10 +3625,14 @@ $('va-submit').onclick = async () => {
   if (!vaPicked['9:16'] && !vaPicked['1:1']) { $('va-err').textContent = 'Pick at least one video.'; return; }
 
   const name = $('va-name').value.trim();
-  // Ad set ID and Page ID — prefer the dropdown; fall back to the manual input
+  // Ad set ID and Page ID — prefer the combobox; fall back to the manual input
   // if user toggled it visible.
-  const adSetId = ($('va-adset-select').value || $('va-adset').value).trim();
-  const pageId  = ($('va-page-select').value  || $('va-page').value).trim();
+  const adsetCombo = document.getElementById('combo-adset');
+  const pageCombo  = document.getElementById('combo-page');
+  const igCombo    = document.getElementById('combo-ig');
+  const adSetId = (adsetCombo.__getValue() || $('va-adset').value).trim();
+  const pageId  = (pageCombo.__getValue()  || $('va-page').value).trim();
+  const igId    = igCombo.__getValue();   // optional
   const primary     = $('va-primary').value.trim();
   const headline    = $('va-headline').value.trim();
   const description = $('va-description').value.trim();
@@ -3567,6 +3660,7 @@ $('va-submit').onclick = async () => {
       ad_account_id: c.metaAcct.startsWith('act_') ? c.metaAcct : `act_${c.metaAcct}`,
       ad_set_id: adSetId,
       page_id: pageId,
+      instagram_actor_id: igId || null,
       primary_text: primary,
       headline,
       description: description || null,
@@ -3614,7 +3708,162 @@ $('va-submit').onclick = async () => {
   }
 };
 
-// ---- ad set + page dropdowns ----
+// ---- searchable combobox component ----
+//
+// Each combo wraps an <input> for filtering, a hidden <input> for the selected
+// id, a clear ×, and a popup list. Items are stored on the combo element as
+// __items: [{id, label, sub, group?}]. Reusable for ad set / page / IG.
+
+function comboInit(rootId, onSelect) {
+  const root = document.getElementById(rootId);
+  const input = root.querySelector('.combo-input');
+  const hidden = root.querySelector('.combo-value');
+  const clearBtn = root.querySelector('.combo-clear');
+  const list = root.querySelector('.combo-list');
+
+  root.__items = [];
+  root.__activeIdx = -1;
+
+  function render(filter = '') {
+    const f = filter.trim().toLowerCase();
+    const matched = root.__items.filter(it =>
+      !f || it.label.toLowerCase().includes(f) || (it.sub || '').toLowerCase().includes(f)
+    );
+    if (matched.length === 0) {
+      list.innerHTML = `<div class="combo-empty">${root.__items.length === 0 ? 'No items loaded' : 'No matches'}</div>`;
+      root.__filtered = [];
+      return;
+    }
+    // Group rendering: if items have `group`, show optgroup-style headers
+    const groups = new Map();
+    for (const it of matched) {
+      const g = it.group || '';
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(it);
+    }
+    let html = '';
+    let idx = 0;
+    const flat = [];
+    for (const [groupName, items] of groups) {
+      if (groupName) html += `<div class="combo-group">${escape(groupName)}</div>`;
+      for (const it of items) {
+        const selectedClass = hidden.value === it.id ? 'selected' : '';
+        const activeClass = idx === root.__activeIdx ? 'active' : '';
+        html += `<div class="combo-item ${selectedClass} ${activeClass}" data-idx="${idx}">
+          ${escape(it.label)}
+          ${it.sub ? `<div class="combo-item-sub">${escape(it.sub)}</div>` : ''}
+        </div>`;
+        flat.push(it);
+        idx++;
+      }
+    }
+    root.__filtered = flat;
+    list.innerHTML = html;
+    list.querySelectorAll('.combo-item').forEach(el => {
+      el.onclick = () => pick(parseInt(el.dataset.idx, 10));
+    });
+  }
+
+  function pick(idx) {
+    const it = root.__filtered?.[idx];
+    if (!it) return;
+    hidden.value = it.id;
+    input.value = it.label;
+    root.classList.add('has-value');
+    root.classList.remove('open');
+    if (onSelect) onSelect(it);
+  }
+
+  function open() {
+    if (!root.classList.contains('open')) {
+      root.__activeIdx = -1;
+      render(input.value === input.__lastSelectedLabel ? '' : input.value);
+      root.classList.add('open');
+    }
+  }
+  function close() { root.classList.remove('open'); }
+
+  input.onfocus = open;
+  input.oninput = () => {
+    root.__activeIdx = -1;
+    open();
+    render(input.value);
+    // If user typed something different from the current selection, clear hidden
+    if (input.value !== input.__lastSelectedLabel) {
+      hidden.value = '';
+      root.classList.remove('has-value');
+    }
+  };
+  input.onkeydown = (e) => {
+    if (!root.classList.contains('open')) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') { open(); render(input.value); e.preventDefault(); }
+      return;
+    }
+    const max = (root.__filtered || []).length - 1;
+    if (e.key === 'ArrowDown') {
+      root.__activeIdx = Math.min(max, root.__activeIdx + 1);
+      render(input.value);
+      list.querySelector('.combo-item.active')?.scrollIntoView({ block: 'nearest' });
+      e.preventDefault();
+    } else if (e.key === 'ArrowUp') {
+      root.__activeIdx = Math.max(0, root.__activeIdx - 1);
+      render(input.value);
+      list.querySelector('.combo-item.active')?.scrollIntoView({ block: 'nearest' });
+      e.preventDefault();
+    } else if (e.key === 'Enter') {
+      if (root.__activeIdx >= 0) pick(root.__activeIdx);
+      e.preventDefault();
+    } else if (e.key === 'Escape') {
+      close();
+    }
+  };
+  // Close on outside click
+  document.addEventListener('click', (e) => {
+    if (!root.contains(e.target)) close();
+  });
+  clearBtn.onclick = (e) => {
+    e.stopPropagation();
+    hidden.value = '';
+    input.value = '';
+    root.classList.remove('has-value');
+    if (onSelect) onSelect(null);
+    input.focus();
+  };
+
+  // Public API on the root element
+  root.__setItems = (items) => {
+    root.__items = items;
+    render(input.value);
+  };
+  root.__setValue = (id) => {
+    const it = root.__items.find(x => x.id === id);
+    if (it) {
+      hidden.value = it.id;
+      input.value = it.label;
+      input.__lastSelectedLabel = it.label;
+      root.classList.add('has-value');
+    } else {
+      hidden.value = '';
+      input.value = '';
+      root.classList.remove('has-value');
+    }
+  };
+  root.__getValue = () => hidden.value;
+}
+
+comboInit('combo-adset', (it) => {
+  // Update the duplicate link availability
+  const dup = $('va-adset-duplicate');
+  dup.style.opacity = it ? '1' : '0.5';
+  dup.style.pointerEvents = it ? '' : 'none';
+});
+comboInit('combo-page');
+comboInit('combo-ig');
+// Initial state: duplicate link disabled until something selected
+$('va-adset-duplicate').style.opacity = '0.5';
+$('va-adset-duplicate').style.pointerEvents = 'none';
+
+// ---- ad set + page + IG dropdowns ----
 
 async function vaLoadOptions() {
   if (!sb) return;
@@ -3622,11 +3871,13 @@ async function vaLoadOptions() {
   if (!c.metaAcct || !c.metaToken) {
     $('va-adset-status').textContent = '';
     $('va-page-status').textContent = '';
+    $('va-ig-status').textContent = '';
     return;
   }
 
   $('va-adset-status').textContent = 'loading…';
   $('va-page-status').textContent = 'loading…';
+  $('va-ig-status').textContent = 'loading…';
 
   try {
     const r = await fetch(`${$('sb-url').value}/functions/v1/meta-fetch-options`, {
@@ -3643,48 +3894,56 @@ async function vaLoadOptions() {
     const data = await r.json();
     if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
 
-    // Populate ad sets — group by campaign for readability
-    const adsetSel = $('va-adset-select');
-    const prevAdset = adsetSel.value;
-    adsetSel.innerHTML = '<option value="">— pick an ad set —</option>';
-    const byCampaign = {};
-    for (const s of data.ad_sets || []) {
-      const k = s.campaign_name || '(no campaign)';
-      (byCampaign[k] ??= []).push(s);
-    }
-    for (const [campaign, sets] of Object.entries(byCampaign)) {
-      const og = document.createElement('optgroup');
-      og.label = campaign;
-      for (const s of sets) {
-        const o = document.createElement('option');
-        o.value = s.id;
-        o.textContent = `${s.name}${s.status === 'PAUSED' ? ' (paused)' : ''}`;
-        og.appendChild(o);
-      }
-      adsetSel.appendChild(og);
-    }
-    if (prevAdset && [...adsetSel.options].some(o => o.value === prevAdset)) {
-      adsetSel.value = prevAdset;
-    }
-    $('va-adset-status').textContent = `${(data.ad_sets || []).length} ad sets`;
+    // Ad sets — preserve current selection across reloads
+    const adsetCombo = document.getElementById('combo-adset');
+    const prevAdset = adsetCombo.__getValue();
+    const adSetItems = (data.ad_sets || []).map(s => ({
+      id: s.id,
+      label: `${s.name}${s.status === 'PAUSED' ? ' (paused)' : ''}`,
+      sub: `${s.campaign_name || '(no campaign)'} · ${s.id}`,
+      group: s.campaign_name || '(no campaign)',
+      _raw: s,
+    }));
+    adsetCombo.__setItems(adSetItems);
+    if (prevAdset) adsetCombo.__setValue(prevAdset);
+    $('va-adset-status').textContent = `${adSetItems.length} ad sets`;
 
-    // Populate pages
-    const pageSel = $('va-page-select');
-    const prevPage = pageSel.value;
-    pageSel.innerHTML = '<option value="">— pick a Facebook Page —</option>';
-    for (const p of data.pages || []) {
-      const o = document.createElement('option');
-      o.value = p.id;
-      o.textContent = p.name;
-      pageSel.appendChild(o);
+    // Pages
+    const pageCombo = document.getElementById('combo-page');
+    const prevPage = pageCombo.__getValue();
+    const pageItems = (data.pages || []).map(p => ({
+      id: p.id,
+      label: p.name,
+      sub: p.id,
+    }));
+    pageCombo.__setItems(pageItems);
+    if (prevPage) pageCombo.__setValue(prevPage);
+    $('va-page-status').textContent = `${pageItems.length} pages`;
+
+    // Instagram accounts
+    const igCombo = document.getElementById('combo-ig');
+    const prevIg = igCombo.__getValue();
+    const igItems = (data.instagram_accounts || []).map(a => ({
+      id: a.id,
+      label: `@${a.username}`,
+      sub: a.id,
+    }));
+    igCombo.__setItems(igItems);
+    if (prevIg) igCombo.__setValue(prevIg);
+    $('va-ig-status').textContent = igItems.length > 0
+      ? `${igItems.length} IG accounts`
+      : 'no IG accounts found';
+
+    // Surface backend warnings (e.g. token missing scopes)
+    if (data.warnings && data.warnings.length) {
+      console.warn('Meta options warnings:', data.warnings);
+      // Tag a tooltip with combined warnings on the page-status indicator
+      $('va-page-status').title = data.warnings.join('\n');
     }
-    if (prevPage && [...pageSel.options].some(o => o.value === prevPage)) {
-      pageSel.value = prevPage;
-    }
-    $('va-page-status').textContent = `${(data.pages || []).length} pages`;
   } catch (e) {
     $('va-adset-status').textContent = 'load failed';
     $('va-page-status').textContent = 'load failed';
+    $('va-ig-status').textContent = 'load failed';
     console.warn('vaLoadOptions:', e);
   }
 }
@@ -3703,6 +3962,74 @@ $('va-page-manual-toggle').onclick = (e) => {
   const isHidden = $('va-page').style.display === 'none';
   $('va-page').style.display = isHidden ? '' : 'none';
   if (isHidden) $('va-page').focus();
+};
+
+// ---- duplicate ad set ----
+
+$('va-adset-duplicate').onclick = (e) => {
+  e.preventDefault();
+  const adsetCombo = document.getElementById('combo-adset');
+  const id = adsetCombo.__getValue();
+  if (!id) return;
+  const item = adsetCombo.__items.find(x => x.id === id);
+  if (!item) return;
+
+  // Strip "(paused)" suffix and append "— duplicate"
+  const baseName = item.label.replace(/\s*\(paused\)\s*$/, '');
+  $('va-dup-source').textContent = `Source: ${item.label} (${item.id})`;
+  $('va-dup-name').value = `${baseName} — duplicate`;
+  $('va-dup-err').textContent = '';
+  $('va-dup-modal').classList.add('open');
+  setTimeout(() => $('va-dup-name').focus(), 50);
+};
+
+$('va-dup-cancel').onclick = () => $('va-dup-modal').classList.remove('open');
+$('va-dup-modal').onclick = (e) => {
+  if (e.target.id === 'va-dup-modal') $('va-dup-modal').classList.remove('open');
+};
+$('va-dup-create').onclick = async () => {
+  const newName = $('va-dup-name').value.trim();
+  if (!newName) { $('va-dup-err').textContent = 'Name required'; return; }
+  const adsetCombo = document.getElementById('combo-adset');
+  const sourceId = adsetCombo.__getValue();
+  if (!sourceId) { $('va-dup-err').textContent = 'No source ad set selected'; return; }
+  const c = vaCreds();
+  if (!c.metaAcct || !c.metaToken) {
+    $('va-dup-err').textContent = 'Set Meta credentials first'; return;
+  }
+
+  const btn = $('va-dup-create');
+  btn.disabled = true;
+  btn.textContent = 'Creating…';
+  $('va-dup-err').textContent = '';
+
+  try {
+    const r = await fetch(`${$('sb-url').value}/functions/v1/meta-duplicate-adset`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${$('sb-key').value}`,
+      },
+      body: JSON.stringify({
+        ad_account_id: c.metaAcct,
+        source_adset_id: sourceId,
+        new_name: newName,
+        access_token: c.metaToken,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
+
+    $('va-dup-modal').classList.remove('open');
+    // Refresh dropdowns and select the new ad set
+    await vaLoadOptions();
+    adsetCombo.__setValue(data.id);
+  } catch (e) {
+    $('va-dup-err').textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Create duplicate';
+  }
 };
 
 // ---- "use existing ad as template" ----
@@ -3739,22 +4066,21 @@ $('va-template-load').onclick = async () => {
     const data = await r.json();
     if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
 
-    // Fill the form. Prefer the dropdown; fall back to manual field if the
-    // option doesn't exist in the loaded set.
-    function setSelectOrManual(selectId, manualId, manualToggleId, value) {
+    // Fill the form. Prefer the combobox; fall back to manual field if the
+    // value isn't in the loaded items.
+    function setComboOrManual(comboId, manualId, value) {
       if (!value) return;
-      const sel = $(selectId);
-      const opt = [...sel.options].find(o => o.value === value);
-      if (opt) {
-        sel.value = value;
+      const combo = document.getElementById(comboId);
+      const item = combo.__items.find(x => x.id === value);
+      if (item) {
+        combo.__setValue(value);
       } else {
-        // Show the manual field and put the value there
         $(manualId).style.display = '';
         $(manualId).value = value;
       }
     }
-    setSelectOrManual('va-adset-select', 'va-adset', 'va-adset-manual-toggle', data.ad_set_id);
-    setSelectOrManual('va-page-select',  'va-page',  'va-page-manual-toggle',  data.page_id);
+    setComboOrManual('combo-adset', 'va-adset', data.ad_set_id);
+    setComboOrManual('combo-page',  'va-page',  data.page_id);
 
     if (data.primary_text) $('va-primary').value     = data.primary_text;
     if (data.headline)     $('va-headline').value    = data.headline;
