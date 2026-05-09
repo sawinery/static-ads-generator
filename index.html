@@ -720,6 +720,9 @@
         <a href="#" id="va-adset-duplicate" style="color:var(--ink-low); text-decoration:underline;">duplicate selected</a>
         <span id="va-adset-status" style="margin-left:auto;"></span>
       </div>
+      <div id="va-adset-dynamic-warn" style="display:none; margin-top:6px; padding:6px 9px; background:rgba(255, 200, 0, 0.08); border:1px solid rgba(255, 200, 0, 0.4); border-radius:4px; font-size:12px; color:#e0c060;">
+        ⚡ This ad set has Dynamic Creative on, which limits it to <b>one ad max</b>. Click <b>"duplicate selected"</b> above to make a copy first, then submit.
+      </div>
       <input id="va-adset" placeholder="6123456789012" style="display:none; margin-top:6px;">
 
       <label style="margin-top:10px">Page</label>
@@ -4311,6 +4314,16 @@ comboInit('combo-adset', (it) => {
   const dup = $('va-adset-duplicate');
   dup.style.opacity = it ? '1' : '0.5';
   dup.style.pointerEvents = it ? '' : 'none';
+
+  // Warn if dynamic creative is on — Meta blocks adding multiple ads
+  const warn = $('va-adset-dynamic-warn');
+  if (warn) {
+    if (it && it._raw?.is_dynamic_creative) {
+      warn.style.display = '';
+    } else {
+      warn.style.display = 'none';
+    }
+  }
 });
 comboInit('combo-page');
 comboInit('combo-ig');
@@ -4352,13 +4365,19 @@ async function vaLoadOptions() {
     // Ad sets — preserve current selection across reloads
     const adsetCombo = document.getElementById('combo-adset');
     const prevAdset = adsetCombo.__getValue();
-    const adSetItems = (data.ad_sets || []).map(s => ({
-      id: s.id,
-      label: `${s.name}${s.status === 'PAUSED' ? ' (paused)' : ''}`,
-      sub: `${s.campaign_name || '(no campaign)'} · ${s.id}`,
-      group: s.campaign_name || '(no campaign)',
-      _raw: s,
-    }));
+    const adSetItems = (data.ad_sets || []).map(s => {
+      const flags = [];
+      if (s.status === 'PAUSED') flags.push('paused');
+      if (s.is_dynamic_creative) flags.push('⚡ dynamic creative');
+      const flagSuffix = flags.length ? ` (${flags.join(', ')})` : '';
+      return {
+        id: s.id,
+        label: `${s.name}${flagSuffix}`,
+        sub: `${s.campaign_name || '(no campaign)'} · ${s.id}`,
+        group: s.campaign_name || '(no campaign)',
+        _raw: s,
+      };
+    });
     adsetCombo.__setItems(adSetItems);
     if (prevAdset) adsetCombo.__setValue(prevAdset);
     $('va-adset-status').textContent = `${adSetItems.length} ad sets`;
