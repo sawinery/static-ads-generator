@@ -876,7 +876,7 @@
 
     <!-- Spreadsheet toolbar -->
     <div class="va-sheet-toolbar">
-      <h2 style="margin:0;">Video ads</h2>
+      <h2 style="margin:0;">Ads</h2>
       <span class="hint" id="va-sheet-count">0 drafts</span>
       <span style="flex:1"></span>
       <button class="btn ghost small" id="va-sheet-load-template">📋 Add row from existing ad</button>
@@ -908,6 +908,7 @@
         <tbody id="va-sheet-body"></tbody>
       </table>
     </div>
+    <div id="va-sheet-pagination" style="display:flex; gap:10px; align-items:center; justify-content:center; padding:6px 0;"></div>
 
     <!-- Submissions list, smaller, collapsed by default -->
     <details class="va-submissions-details">
@@ -917,6 +918,7 @@
       </div>
       <div id="va-list" class="va-list" style="margin-top:8px;"></div>
       <div id="va-empty" class="empty">No video ads submitted yet.</div>
+      <div id="va-list-pagination" style="display:flex; gap:10px; align-items:center; justify-content:center; padding:6px 0;"></div>
     </details>
 
     <!-- Hidden legacy form: still drives the actual submission. The spreadsheet
@@ -1216,6 +1218,7 @@
       <input type="text" id="va-lib-search" placeholder="🔎 Search prompts / names…" style="flex:1; font-size:12px; padding:5px 8px;">
     </div>
     <div id="va-lib-grid" style="overflow:auto; flex:1; padding:14px; display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; align-content:start;"></div>
+    <div id="va-lib-pagination" style="padding:10px 14px; border-top:1px solid var(--line); display:flex; gap:10px; align-items:center; justify-content:center;"></div>
   </div>
 </div>
 
@@ -2579,6 +2582,11 @@ async function refresh(userInitiated = false) {
   }
 
   render();
+
+  // Keep the polling tracker in sync so the next interval check uses the
+  // most-recent count as a baseline. Stored on window because refresh runs
+  // before the polling block declares its variable.
+  window._pollLastTotal = totalAll;
 }
 
 function renderTabs() {
@@ -3564,22 +3572,44 @@ $('derive-submit').onclick = async () => {
   }
 };
 
-// ---- smart polling: refresh when there's pending/processing work anywhere ----
-// When everything is settled, no polling. When something is in-flight (either
-// on the current page or globally — the queue strip can be showing batches
-// from off-page jobs), poll every 15s.
-setInterval(() => {
+// ---- smart polling: refresh when there's pending/processing work anywhere,
+// or when new variants have been created since last refresh.
+// Track the last-known total. If it grows, something new landed → refresh.
+window._pollLastTotal = -1;
+
+setInterval(async () => {
   if (document.hidden) return;
   if (!sb) return;
+
   const onPage = allVariants.some(v => v.status === 'pending' || v.status === 'processing');
   const stripVisible = $('queue-status').style.display === 'flex';
-  if (onPage || stripVisible) refresh(false);
 
-  // Also refresh the video ads list if the video tab is active and there's
-  // any in-flight video ad job. Cheaper to always check than to track state.
+  // Cheap count-only query to detect new arrivals even when nothing visible
+  // is in-flight. Catches: user is browsing page 1, a job finishes, the new
+  // variant should appear at the top.
+  let needsRefresh = onPage || stripVisible;
+  if (!needsRefresh) {
+    try {
+      const { count } = await sb.from('variants').select('*', { count: 'exact', head: true });
+      if (count != null && window._pollLastTotal !== -1 && count > window._pollLastTotal) {
+        needsRefresh = true;
+      }
+      if (count != null) window._pollLastTotal = count;
+    } catch (_) {}
+  }
+
+  if (needsRefresh) {
+    refresh(false);
+  }
+
+  // Also refresh the video ads list if the video tab is active.
   const videoTabActive = document.getElementById('page-video').style.display !== 'none';
   if (videoTabActive) vaRefreshList();
 }, 15000);
+
+// Initialize the tracker after the first user-driven refresh fires.
+// We do it via a hook in refresh() itself rather than reassignment because
+// `refresh` is declared with `function` in module-strict mode.
 
 // ---- prompt templates (DB-driven, editable via "Manage" modal) ----
 let templates = [];   // [{id, name, content}]
@@ -4311,10 +4341,13 @@ $('dbx-modal-search-clear').onclick = () => {
 let vaLibAspect = null;
 let vaLibSearchTimer = null;
 let vaLibVariantsCache = [];   // cached fetched list
+const VA_LIB_PAGE_SIZE = 30;
+let vaLibPage = 0;             // 0-indexed page
 
 async function openLibPicker(aspect) {
   if (!sb) { alert('Connect Supabase first.'); return; }
   vaLibAspect = aspect;
+  vaLibPage = 0;
   $('va-lib-aspect').textContent = `for ${aspect} slot`;
   $('va-lib-search').value = '';
   $('va-lib-modal').classList.add('open');
@@ -4329,7 +4362,7 @@ async function openLibPicker(aspect) {
     .eq('status', 'completed')
     .eq('aspect', aspectKey)
     .order('created_at', { ascending: false })
-    .limit(200);
+    .limit(500);
   if (error) {
     $('va-lib-grid').innerHTML = `<div style="grid-column:1/-1; color:var(--danger); padding:20px;">${escape(error.message)}</div>`;
     return;
@@ -4340,7 +4373,6 @@ async function openLibPicker(aspect) {
 
 function renderLibGrid(filterText) {
   const f = filterText.trim().toLowerCase();
-  // Prompt comes from jobs.prompt (joined) or final_prompt on the variant
   const promptOf = (v) => v.final_prompt || v.jobs?.prompt || '';
   const filtered = !f
     ? vaLibVariantsCache
@@ -4348,12 +4380,20 @@ function renderLibGrid(filterText) {
         (v.display_name || '').toLowerCase().includes(f) ||
         promptOf(v).toLowerCase().includes(f));
 
+  // Reset to first page when filter changes (caller can save state if needed)
+  const totalPages = Math.max(1, Math.ceil(filtered.length / VA_LIB_PAGE_SIZE));
+  if (vaLibPage >= totalPages) vaLibPage = 0;
+
   if (filtered.length === 0) {
     $('va-lib-grid').innerHTML = `<div style="grid-column:1/-1; padding:30px; text-align:center; color:var(--ink-low);">${vaLibVariantsCache.length === 0 ? 'No completed variants for this aspect yet.' : 'No matches.'}</div>`;
+    $('va-lib-pagination').innerHTML = '';
     return;
   }
 
-  $('va-lib-grid').innerHTML = filtered.map(v => {
+  const startIdx = vaLibPage * VA_LIB_PAGE_SIZE;
+  const pageItems = filtered.slice(startIdx, startIdx + VA_LIB_PAGE_SIZE);
+
+  $('va-lib-grid').innerHTML = pageItems.map(v => {
     const url = signedOutputUrl(v.thumb_path || v.output_path);
     const p = promptOf(v);
     const name = v.display_name || (p ? p.slice(0, 40) : `variant ${v.id.slice(0, 8)}`);
@@ -4381,11 +4421,42 @@ function renderLibGrid(filterText) {
       $('va-lib-modal').classList.remove('open');
     };
   });
+
+  // Render pagination controls
+  renderLibPagination(filtered.length, totalPages);
+}
+
+function renderLibPagination(totalItems, totalPages) {
+  const wrap = $('va-lib-pagination');
+  if (totalPages <= 1) {
+    wrap.innerHTML = `<div style="color:var(--ink-low); font-size:12px;">${totalItems} item${totalItems === 1 ? '' : 's'}</div>`;
+    return;
+  }
+  const startIdx = vaLibPage * VA_LIB_PAGE_SIZE;
+  const endIdx = Math.min(startIdx + VA_LIB_PAGE_SIZE, totalItems);
+  wrap.innerHTML = `
+    <button class="btn ghost small" id="va-lib-prev" ${vaLibPage === 0 ? 'disabled' : ''}>‹ Prev</button>
+    <span style="color:var(--ink-low); font-size:12px;">${startIdx + 1}–${endIdx} of ${totalItems} · page ${vaLibPage + 1} / ${totalPages}</span>
+    <button class="btn ghost small" id="va-lib-next" ${vaLibPage >= totalPages - 1 ? 'disabled' : ''}>Next ›</button>
+  `;
+  $('va-lib-prev').onclick = () => {
+    vaLibPage = Math.max(0, vaLibPage - 1);
+    renderLibGrid($('va-lib-search').value);
+    $('va-lib-grid').scrollTop = 0;
+  };
+  $('va-lib-next').onclick = () => {
+    vaLibPage = Math.min(totalPages - 1, vaLibPage + 1);
+    renderLibGrid($('va-lib-search').value);
+    $('va-lib-grid').scrollTop = 0;
+  };
 }
 
 $('va-lib-search').oninput = () => {
   if (vaLibSearchTimer) clearTimeout(vaLibSearchTimer);
-  vaLibSearchTimer = setTimeout(() => renderLibGrid($('va-lib-search').value), 200);
+  vaLibSearchTimer = setTimeout(() => {
+    vaLibPage = 0;   // reset pagination on new search
+    renderLibGrid($('va-lib-search').value);
+  }, 200);
 };
 $('va-lib-close').onclick = () => $('va-lib-modal').classList.remove('open');
 $('va-lib-modal').onclick = (e) => {
@@ -5197,7 +5268,10 @@ function vaSheetNewRow(data = {}) {
 
 function vaSheetSave() {
   try { localStorage.setItem(VA_SHEET_KEY, JSON.stringify(vaSheetRows)); } catch (_) {}
-  $('va-sheet-count').textContent = `${vaSheetRows.length} draft${vaSheetRows.length === 1 ? '' : 's'}`;
+  // Count published rows (success status) vs drafts (everything else)
+  const published = vaSheetRows.filter(r => r.data.status === 'success').length;
+  const drafts = vaSheetRows.length - published;
+  $('va-sheet-count').textContent = `${published} published, ${drafts} draft${drafts === 1 ? '' : 's'}`;
 }
 
 function vaSheetLoad() {
@@ -5223,12 +5297,37 @@ function vaSheetLoad() {
   }
 }
 
+const VA_SHEET_PAGE_SIZE = 25;
+let vaSheetPage = 0;
+
 function vaSheetRender() {
   const tbody = $('va-sheet-body');
   tbody.innerHTML = '';
-  vaSheetRows.forEach((row, idx) => {
-    tbody.appendChild(vaSheetRowEl(row, idx));
-  });
+
+  const totalRows = vaSheetRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / VA_SHEET_PAGE_SIZE));
+  if (vaSheetPage >= totalPages) vaSheetPage = totalPages - 1;
+  const startIdx = vaSheetPage * VA_SHEET_PAGE_SIZE;
+  const endIdx = Math.min(startIdx + VA_SHEET_PAGE_SIZE, totalRows);
+
+  for (let i = startIdx; i < endIdx; i++) {
+    tbody.appendChild(vaSheetRowEl(vaSheetRows[i], i));
+  }
+
+  // Render pagination footer
+  const pag = $('va-sheet-pagination');
+  if (totalPages <= 1) {
+    pag.innerHTML = '';
+  } else {
+    pag.innerHTML = `
+      <button class="btn ghost small" id="va-sheet-prev" ${vaSheetPage === 0 ? 'disabled' : ''}>‹ Prev</button>
+      <span style="color:var(--ink-low); font-size:12px;">Rows ${startIdx + 1}–${endIdx} of ${totalRows} · page ${vaSheetPage + 1} / ${totalPages}</span>
+      <button class="btn ghost small" id="va-sheet-next" ${vaSheetPage >= totalPages - 1 ? 'disabled' : ''}>Next ›</button>
+    `;
+    $('va-sheet-prev').onclick = () => { vaSheetPage = Math.max(0, vaSheetPage - 1); vaSheetRender(); };
+    $('va-sheet-next').onclick = () => { vaSheetPage = Math.min(totalPages - 1, vaSheetPage + 1); vaSheetRender(); };
+  }
+
   vaSheetSave();
 }
 
@@ -6051,7 +6150,7 @@ async function vaSheetPreviewAsset(pick) {
       const video = document.createElement('video');
       video.src = url;
       video.controls = true;
-      video.autoplay = true;
+      video.autoplay = false;
       video.style.cssText = 'max-width:90vw; max-height:80vh; border-radius:8px;';
       media.innerHTML = '';
       media.appendChild(video);
@@ -6483,7 +6582,11 @@ vaMoveLegacyConnections();
 vaSheetRender();
 
 // ---- video ad list ----
-$('va-refresh').onclick = vaRefreshList;
+$('va-refresh').onclick = () => { vaListPage = 0; vaRefreshList(); };
+
+const VA_LIST_PAGE_SIZE = 25;
+let vaListPage = 0;
+let _vaListCache = [];
 
 async function vaRefreshList() {
   if (!sb) return;
@@ -6491,15 +6594,29 @@ async function vaRefreshList() {
     .from('video_ad_jobs')
     .select('*')
     .order('created_at', { ascending: false })
-    .limit(50);
+    .limit(500);
   if (error) { console.warn(error); return; }
+  _vaListCache = data || [];
+  renderVaList();
+}
+
+function renderVaList() {
+  const data = _vaListCache;
   if (!data || data.length === 0) {
     $('va-empty').style.display = '';
     $('va-list').innerHTML = '';
+    $('va-list-pagination').innerHTML = '';
     return;
   }
   $('va-empty').style.display = 'none';
-  $('va-list').innerHTML = data.map(j => {
+
+  const totalPages = Math.max(1, Math.ceil(data.length / VA_LIST_PAGE_SIZE));
+  if (vaListPage >= totalPages) vaListPage = 0;
+  const startIdx = vaListPage * VA_LIST_PAGE_SIZE;
+  const endIdx = Math.min(startIdx + VA_LIST_PAGE_SIZE, data.length);
+  const pageItems = data.slice(startIdx, endIdx);
+
+  $('va-list').innerHTML = pageItems.map(j => {
     const name = j.display_name || '(unnamed)';
     const adManagerUrl = j.ad_id
       ? `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${(j.ad_account_id || '').replace('act_','')}&selected_ad_ids=${j.ad_id}`
@@ -6520,6 +6637,20 @@ async function vaRefreshList() {
     </div>
   `;
   }).join('');
+
+  // Pagination
+  const pag = $('va-list-pagination');
+  if (totalPages <= 1) {
+    pag.innerHTML = `<div style="color:var(--ink-low); font-size:12px;">${data.length} item${data.length === 1 ? '' : 's'}</div>`;
+  } else {
+    pag.innerHTML = `
+      <button class="btn ghost small" id="va-list-prev" ${vaListPage === 0 ? 'disabled' : ''}>‹ Prev</button>
+      <span style="color:var(--ink-low); font-size:12px;">${startIdx + 1}–${endIdx} of ${data.length} · page ${vaListPage + 1} / ${totalPages}</span>
+      <button class="btn ghost small" id="va-list-next" ${vaListPage >= totalPages - 1 ? 'disabled' : ''}>Next ›</button>
+    `;
+    $('va-list-prev').onclick = () => { vaListPage = Math.max(0, vaListPage - 1); renderVaList(); };
+    $('va-list-next').onclick = () => { vaListPage = Math.min(totalPages - 1, vaListPage + 1); renderVaList(); };
+  }
 }
 
 vaLoadCreds();
