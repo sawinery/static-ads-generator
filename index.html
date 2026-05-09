@@ -65,6 +65,8 @@
   .pane-right { padding:20px; overflow:auto; }
 
   /* Video-ad-specific bits */
+  .dbx-root-tab.active { background:var(--accent); color:#0e0f12; }
+
   /* searchable combobox (used for ad set, page, instagram pickers) */
   .combo { position:relative; }
   .combo .combo-input {
@@ -852,6 +854,10 @@
       <h3 style="margin:0; font-size:14px;">Pick from Dropbox</h3>
       <span class="hint" id="dbx-modal-aspect" style="margin:0;"></span>
       <span style="flex:1"></span>
+      <div style="display:flex; gap:4px; font-size:11px;">
+        <button class="btn ghost small dbx-root-tab active" data-root="team" title="Show team-shared folders">Team</button>
+        <button class="btn ghost small dbx-root-tab" data-root="personal" title="Show your personal Dropbox">Personal</button>
+      </div>
       <button class="btn ghost small" id="dbx-modal-up" title="Go up one folder">▲ Up</button>
       <button class="btn ghost small" id="dbx-modal-close">Close</button>
     </div>
@@ -3547,6 +3553,7 @@ async function dbxList(path = '', cursor = null) {
       dropbox_app_secret: c.dbxSecret,
       dropbox_refresh_token: c.dbxRefresh,
       dropbox_team_member_id: c.dbxTeamId || undefined,
+      personal_root: dbxModalRoot === 'personal',
       path, cursor,
     }),
   });
@@ -3575,6 +3582,7 @@ async function dbxSharedLink(path) {
 // Dropbox file picker state
 let dbxModalCurrentPath = '';
 let dbxModalAspect = null;        // '9:16' | '1:1' — which slot we're picking for
+let dbxModalRoot = 'team';        // 'team' | 'personal' — namespace selector for team accounts
 const VIDEO_EXT = /\.(mp4|mov|m4v|webm)$/i;
 
 document.querySelectorAll('[data-pick]').forEach(b => {
@@ -3676,12 +3684,12 @@ async function dbxNavigate(path) {
       r.style.opacity = '0.5';
       r.style.pointerEvents = 'none';
       try {
-        const linkRes = await dbxSharedLink(r.dataset.file);
-        if (linkRes.error) throw new Error(linkRes.error);
+        // No need to pre-mint a shared link — the worker mints a fresh
+        // temporary download link at upload time.
         vaPicked[dbxModalAspect] = {
           path: r.dataset.file,
           name: r.dataset.name,
-          sharedUrl: linkRes.url,
+          root: dbxModalRoot,   // 'team' or 'personal' — tells worker which namespace
         };
         const labelEl = dbxModalAspect === '9:16' ? $('va-9-16-name') : $('va-1-1-name');
         labelEl.textContent = r.dataset.name;
@@ -3690,7 +3698,7 @@ async function dbxNavigate(path) {
         row.classList.add('has-pick');
         $('dbx-modal').classList.remove('open');
       } catch (e) {
-        alert('Failed to get shared link: ' + e.message);
+        alert('Failed to pick file: ' + e.message);
         r.style.opacity = '';
         r.style.pointerEvents = '';
       }
@@ -3708,6 +3716,17 @@ $('dbx-modal-close').onclick = () => $('dbx-modal').classList.remove('open');
 $('dbx-modal').onclick = (e) => {
   if (e.target.id === 'dbx-modal') $('dbx-modal').classList.remove('open');
 };
+
+// Team / Personal namespace toggle inside the picker
+document.querySelectorAll('.dbx-root-tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.dbx-root-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    dbxModalRoot = tab.dataset.root;
+    // Re-list the root of the newly selected namespace
+    dbxNavigate('');
+  };
+});
 
 // ---- video ad submit ----
 $('va-submit').onclick = async () => {
@@ -3765,7 +3784,9 @@ $('va-submit').onclick = async () => {
       link_url: linkUrl,
       cta_type: ctaType,
       video_9_16_dropbox_path: vaPicked['9:16']?.path || null,
+      video_9_16_dropbox_root: vaPicked['9:16']?.root || 'team',
       video_1_1_dropbox_path:  vaPicked['1:1']?.path || null,
+      video_1_1_dropbox_root:  vaPicked['1:1']?.root || 'team',
       meta_access_token:       c.metaToken,
       dropbox_app_key:         c.dbxAppKey,
       dropbox_app_secret:      c.dbxAppSecret,
