@@ -718,6 +718,7 @@
       <div class="hint" style="display:flex; align-items:center; gap:8px;">
         <a href="#" id="va-adset-manual-toggle" style="color:var(--ink-low); text-decoration:underline;">enter ID manually</a>
         <a href="#" id="va-adset-duplicate" style="color:var(--ink-low); text-decoration:underline;">duplicate selected</a>
+        <a href="#" id="va-adset-debug" style="color:var(--ink-low); text-decoration:underline;">debug</a>
         <span id="va-adset-status" style="margin-left:auto;"></span>
       </div>
       <div id="va-adset-dynamic-warn" style="display:none; margin-top:6px; padding:6px 9px; background:rgba(255, 200, 0, 0.08); border:1px solid rgba(255, 200, 0, 0.4); border-radius:4px; font-size:12px; color:#e0c060;">
@@ -4439,6 +4440,55 @@ $('va-page-manual-toggle').onclick = (e) => {
 };
 
 // ---- duplicate ad set ----
+
+$('va-adset-debug').onclick = async (e) => {
+  e.preventDefault();
+  const adsetCombo = document.getElementById('combo-adset');
+  const id = adsetCombo.__getValue();
+  if (!id) { alert('Pick an ad set first'); return; }
+  const c = vaCreds();
+  if (!c.metaToken) { alert('Set Meta credentials first'); return; }
+
+  $('va-adset-debug').textContent = 'loading…';
+  try {
+    const r = await fetch(`${$('sb-url').value}/functions/v1/meta-debug-adset`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${$('sb-key').value}`,
+      },
+      body: JSON.stringify({ ad_set_id: id, access_token: c.metaToken }),
+    });
+    const data = await r.json();
+    const pretty = JSON.stringify(data, null, 2);
+
+    // Show in a simple textarea so the user can copy it
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:9999; display:flex; align-items:center; justify-content:center; padding:40px;';
+    wrapper.innerHTML = `
+      <div style="background:var(--panel); border-radius:8px; padding:20px; max-width:800px; width:100%; max-height:90vh; display:flex; flex-direction:column;">
+        <h3 style="margin:0 0 8px;">Ad set debug info</h3>
+        <p class="hint" style="margin-top:0;">Copy this and paste it back. Click outside to close.</p>
+        <textarea readonly style="flex:1; min-height:400px; font-family:var(--mono); font-size:11px; padding:10px; resize:vertical;">${pretty}</textarea>
+        <div style="display:flex; gap:8px; margin-top:10px;">
+          <button class="btn small" id="va-debug-copy">Copy to clipboard</button>
+          <button class="btn ghost small" id="va-debug-close">Close</button>
+        </div>
+      </div>
+    `;
+    wrapper.onclick = (ev) => { if (ev.target === wrapper) wrapper.remove(); };
+    document.body.appendChild(wrapper);
+    document.getElementById('va-debug-copy').onclick = () => {
+      navigator.clipboard.writeText(pretty);
+      document.getElementById('va-debug-copy').textContent = 'Copied!';
+    };
+    document.getElementById('va-debug-close').onclick = () => wrapper.remove();
+  } catch (err) {
+    alert('Debug failed: ' + err.message);
+  } finally {
+    $('va-adset-debug').textContent = 'debug';
+  }
+};
 
 $('va-adset-duplicate').onclick = (e) => {
   e.preventDefault();
