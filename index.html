@@ -67,6 +67,15 @@
   /* Video-ad-specific bits */
   .dbx-root-tab.active { background:var(--accent); color:#0e0f12; }
 
+  .dbx-crumb {
+    cursor:pointer; padding:2px 5px; border-radius:3px;
+    color:var(--ink-low); user-select:none;
+  }
+  .dbx-crumb:hover { background:var(--panel-2); color:var(--ink); }
+  .dbx-crumb.current { color:var(--ink); cursor:default; }
+  .dbx-crumb.current:hover { background:transparent; }
+  .dbx-crumb-sep { color:var(--ink-low); padding:0 2px; user-select:none; }
+
   /* searchable combobox (used for ad set, page, instagram pickers) */
   .combo { position:relative; }
   .combo .combo-input {
@@ -893,8 +902,8 @@
       <input type="text" id="dbx-modal-search" placeholder="🔎 Search files in this namespace…" style="flex:1; font-size:12px; padding:5px 8px;">
       <button class="btn ghost small" id="dbx-modal-search-clear" style="display:none;" title="Clear search">×</button>
     </div>
-    <div style="padding:6px 14px; border-bottom:1px solid var(--line); font-family:var(--mono); font-size:11px; color:var(--ink-low);">
-      <span id="dbx-modal-path">/</span>
+    <div style="padding:6px 14px; border-bottom:1px solid var(--line); font-family:var(--mono); font-size:11px; color:var(--ink-low); display:flex; align-items:center; flex-wrap:wrap; gap:2px;">
+      <span id="dbx-modal-breadcrumb"></span>
     </div>
     <div id="dbx-modal-list" style="overflow:auto; flex:1; padding:8px;"></div>
   </div>
@@ -3567,12 +3576,30 @@ function vaCreds() {
 }
 
 // ---- Dropbox browser ----
+// Folder listings get cached for 30 seconds to make backtracking instant.
+// Cached only for non-cursor (first-page) reads; pagination skips cache.
+const dbxListCache = new Map();
+const DBX_CACHE_TTL_MS = 30_000;
+
+function dbxCacheKey(path) {
+  return `${dbxModalRoot}:${path}`;
+}
+
 async function dbxList(path = '', cursor = null) {
   const c = vaCreds();
   if (!c.dbxKey || !c.dbxSecret || !c.dbxRefresh) {
     throw new Error('Dropbox not configured. Set App Key, Secret, and Refresh Token above.');
   }
   if (!sb) throw new Error('Supabase not connected (Static images tab → connect first).');
+
+  // Cache hit?
+  if (!cursor) {
+    const cached = dbxListCache.get(dbxCacheKey(path));
+    if (cached && (Date.now() - cached.t) < DBX_CACHE_TTL_MS) {
+      return cached.data;
+    }
+  }
+
   const url = `${$('sb-url').value}/functions/v1/dropbox-list`;
   const res = await fetch(url, {
     method: 'POST',
@@ -3589,8 +3616,15 @@ async function dbxList(path = '', cursor = null) {
       path, cursor,
     }),
   });
-  return await res.json();
+  const data = await res.json();
+  if (!cursor && !data.error) {
+    dbxListCache.set(dbxCacheKey(path), { t: Date.now(), data });
+  }
+  return data;
 }
+
+// Invalidate cache when user explicitly switches namespace (team↔personal)
+function dbxInvalidateCache() { dbxListCache.clear(); }
 
 async function dbxSharedLink(path) {
   const c = vaCreds();
@@ -3677,7 +3711,18 @@ async function openDbxPicker(aspect) {
   dbxModalAspect = aspect;
   $('dbx-modal-aspect').textContent = `for ${aspect} slot`;
   $('dbx-modal').classList.add('open');
-  await dbxNavigate('');
+
+  // Restore last-used folder for this aspect (or this slot's twin if empty).
+  // Key includes namespace + aspect so team/personal don't trample each other.
+  const lastKey = `dbx-last:${dbxModalRoot}:${aspect}`;
+  let lastPath = localStorage.getItem(lastKey) || '';
+  // Fallback: if this slot has no memory, try the OTHER slot's last folder
+  // (people usually pick both aspects from the same folder)
+  if (!lastPath) {
+    const other = aspect === '9:16' ? '1:1' : '9:16';
+    lastPath = localStorage.getItem(`dbx-last:${dbxModalRoot}:${other}`) || '';
+  }
+  await dbxNavigate(lastPath);
 }
 
 async function dbxNavigate(path) {
@@ -3685,7 +3730,7 @@ async function dbxNavigate(path) {
   $('dbx-modal-search').value = '';
   $('dbx-modal-search-clear').style.display = 'none';
   dbxModalCurrentPath = path;
-  $('dbx-modal-path').textContent = path || '/';
+  renderDbxBreadcrumb(path);
   $('dbx-modal-list').innerHTML = `<div style="padding:30px; text-align:center; color:var(--ink-low);">Loading…</div>`;
 
   let res;
@@ -3715,6 +3760,27 @@ async function dbxNavigate(path) {
   });
 
   renderDbxRows(sorted, /*isSearch*/ false);
+}
+
+function renderDbxBreadcrumb(path) {
+  const container = $('dbx-modal-breadcrumb');
+  // Path is always lowercase from Dropbox, e.g. "/marketing/2026/spring".
+  // Empty path = root.
+  const segments = (path || '').split('/').filter(Boolean);
+  // Render: [Root] / segment1 / segment2 / segment3
+  let html = `<span class="dbx-crumb ${segments.length === 0 ? 'current' : ''}" data-path="">${dbxModalRoot === 'team' ? 'Team root' : 'Personal'}</span>`;
+  let cumulative = '';
+  segments.forEach((seg, i) => {
+    cumulative += '/' + seg;
+    const isLast = i === segments.length - 1;
+    html += `<span class="dbx-crumb-sep">/</span>`;
+    html += `<span class="dbx-crumb ${isLast ? 'current' : ''}" data-path="${escape(cumulative)}">${escape(seg)}</span>`;
+  });
+  container.innerHTML = html;
+  container.querySelectorAll('.dbx-crumb').forEach(el => {
+    if (el.classList.contains('current')) return;
+    el.onclick = () => dbxNavigate(el.dataset.path);
+  });
 }
 
 async function dbxSearch(query) {
@@ -3806,6 +3872,13 @@ function renderDbxRows(entries, isSearch) {
           name: r.dataset.name,
           root: dbxModalRoot,
         };
+        // Remember the folder this came from for next time. If the pick was
+        // from a search result, derive from path; else use current folder.
+        const folder = dbxSearchActive
+          ? (r.dataset.file.split('/').slice(0, -1).join('/'))
+          : dbxModalCurrentPath;
+        localStorage.setItem(`dbx-last:${dbxModalRoot}:${dbxModalAspect}`, folder);
+
         const labelEl = dbxModalAspect === '9:16' ? $('va-9-16-name') : $('va-1-1-name');
         labelEl.textContent = r.dataset.name;
         document.querySelector(`[data-pick-clear="${dbxModalAspect}"]`).style.display = '';
