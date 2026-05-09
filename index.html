@@ -76,6 +76,105 @@
   .dbx-crumb.current:hover { background:transparent; }
   .dbx-crumb-sep { color:var(--ink-low); padding:0 2px; user-select:none; }
 
+  /* video ad spreadsheet */
+  .va-spreadsheet-pane {
+    width:100%; padding:16px 20px; display:flex; flex-direction:column;
+    gap:12px; min-height:0;
+  }
+  .va-connections {
+    border:1px solid var(--line); border-radius:var(--radius); overflow:hidden;
+  }
+  .va-connections-header {
+    display:flex; align-items:center; padding:6px 10px; background:var(--panel-2);
+    border-bottom:1px solid transparent;
+  }
+  .va-connections.expanded .va-connections-header {
+    border-bottom-color:var(--line);
+  }
+  .va-connections-body { padding:14px; }
+  .va-connections-body .card {
+    margin-bottom:12px;
+  }
+
+  .va-sheet-toolbar {
+    display:flex; align-items:center; gap:10px;
+  }
+  .va-sheet-wrap {
+    flex:1; overflow:auto; border:1px solid var(--line);
+    border-radius:var(--radius); background:var(--panel);
+    min-height:300px;
+  }
+  table.va-sheet {
+    border-collapse:collapse; width:100%; font-size:12px;
+  }
+  table.va-sheet thead th {
+    position:sticky; top:0; background:var(--panel-2);
+    text-align:left; padding:8px 10px; font-weight:600; font-size:11px;
+    text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-low);
+    border-bottom:1px solid var(--line); z-index:2;
+  }
+  table.va-sheet tbody td {
+    padding:6px 8px; border-bottom:1px solid var(--line);
+    vertical-align:top;
+  }
+  table.va-sheet tbody tr.va-row:hover { background:rgba(255,255,255,0.02); }
+  table.va-sheet tbody tr.va-row.is-submitting { background:rgba(100,180,255,0.05); }
+  table.va-sheet tbody tr.va-row.is-failed     { background:rgba(255,80,80,0.06); }
+  table.va-sheet tbody tr.va-row.is-success    { background:rgba(80,200,120,0.05); }
+
+  .va-row input[type="text"], .va-row input[type="url"], .va-row select, .va-row textarea {
+    width:100%; padding:5px 7px; font-size:12px; background:var(--bg);
+    border:1px solid var(--line); border-radius:4px; color:var(--ink);
+    font-family:inherit;
+  }
+  .va-row input:focus, .va-row select:focus, .va-row textarea:focus {
+    outline:none; border-color:var(--accent);
+  }
+  .va-row textarea { min-height:34px; resize:vertical; font-family:inherit; }
+  .va-row .va-cell-asset {
+    display:flex; gap:4px; flex-wrap:wrap; align-items:center;
+  }
+  .va-row .va-cell-asset .pick-name {
+    flex:1 1 100%; padding:3px 5px; background:var(--bg); border-radius:3px;
+    font-size:11px; color:var(--ink-low);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .va-row .va-cell-asset .pick-name.has-pick { color:var(--accent); }
+  .va-row .va-cell-asset button {
+    font-size:10px; padding:3px 6px;
+  }
+  .va-row .va-cell-status {
+    font-size:11px; font-family:var(--mono); text-align:center;
+  }
+  .va-row .va-cell-actions {
+    display:flex; gap:3px; justify-content:flex-end;
+  }
+  .va-row .va-cell-actions button {
+    padding:3px 7px; font-size:11px;
+  }
+  .va-row-handle {
+    color:var(--ink-low); font-family:var(--mono); font-size:10px;
+    text-align:center; padding-top:8px;
+  }
+  .va-creative-type-toggle {
+    display:flex; gap:0; border:1px solid var(--line); border-radius:4px;
+    overflow:hidden; font-size:10px;
+  }
+  .va-creative-type-toggle button {
+    flex:1; padding:4px 6px; background:var(--bg); border:none; color:var(--ink-low);
+    cursor:pointer; font-size:10px;
+  }
+  .va-creative-type-toggle button.active {
+    background:var(--accent); color:#0e0f12;
+  }
+  .va-submissions-details {
+    border:1px solid var(--line); border-radius:var(--radius); padding:10px 14px;
+  }
+  .va-submissions-details summary {
+    cursor:pointer; font-weight:600; font-size:13px; color:var(--ink-low);
+  }
+  .va-submissions-details[open] summary { color:var(--ink); }
+
   /* searchable combobox (used for ad set, page, instagram pickers) */
   .combo { position:relative; }
   .combo .combo-input {
@@ -659,7 +758,67 @@
      VIDEO ADS PAGE — completely separate from the static images pipeline
      ============================================================================ -->
 <main id="page-video" class="page" style="display:none;">
-  <section class="pane-left">
+  <section class="va-spreadsheet-pane">
+
+    <!-- Collapsible connections strip -->
+    <div class="va-connections" id="va-connections">
+      <div class="va-connections-header">
+        <button class="btn ghost small" id="va-connections-toggle">▾ Connections</button>
+        <span class="hint" id="va-conn-summary" style="margin-left:8px;"></span>
+        <span style="flex:1"></span>
+        <button class="btn ghost small" id="va-options-refresh-top" title="Reload ad sets, pages, IG from Meta">↻ Reload options</button>
+      </div>
+      <div class="va-connections-body" id="va-connections-body" style="display:none;"></div>
+    </div>
+
+    <!-- Spreadsheet toolbar -->
+    <div class="va-sheet-toolbar">
+      <h2 style="margin:0;">Video ads</h2>
+      <span class="hint" id="va-sheet-count">0 drafts</span>
+      <span style="flex:1"></span>
+      <button class="btn ghost small" id="va-sheet-load-template">📋 Add row from existing ad</button>
+      <button class="btn small" id="va-sheet-add-row">+ Add row</button>
+      <button class="btn" id="va-sheet-submit-all">Submit all ready</button>
+    </div>
+
+    <!-- Spreadsheet table -->
+    <div class="va-sheet-wrap">
+      <table class="va-sheet">
+        <thead>
+          <tr>
+            <th style="width:36px;"></th>
+            <th style="min-width:200px;">Ad name</th>
+            <th style="min-width:200px;">Ad set</th>
+            <th style="min-width:130px;">Page</th>
+            <th style="min-width:130px;">Instagram</th>
+            <th style="width:80px;">Type</th>
+            <th style="min-width:170px;">9:16 asset</th>
+            <th style="min-width:170px;">1:1 asset</th>
+            <th style="min-width:240px;">Primary text</th>
+            <th style="min-width:160px;">Headline</th>
+            <th style="min-width:160px;">Destination URL</th>
+            <th style="min-width:110px;">CTA</th>
+            <th style="width:90px;">Status</th>
+            <th style="width:120px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="va-sheet-body"></tbody>
+      </table>
+    </div>
+
+    <!-- Submissions list, smaller, collapsed by default -->
+    <details class="va-submissions-details">
+      <summary>Recent submissions</summary>
+      <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+        <button class="btn ghost small" id="va-refresh">Refresh</button>
+      </div>
+      <div id="va-list" class="va-list" style="margin-top:8px;"></div>
+      <div id="va-empty" class="empty">No video ads submitted yet.</div>
+    </details>
+
+    <!-- Hidden legacy form: still drives the actual submission. The spreadsheet
+         row simply fills these fields and triggers the original submit handler. -->
+    <div id="va-legacy-form" style="display:none;">
 
     <div class="card">
       <h2>Meta connection</h2>
@@ -723,6 +882,9 @@
       </div>
       <div id="va-adset-dynamic-warn" style="display:none; margin-top:6px; padding:6px 9px; background:rgba(255, 200, 0, 0.08); border:1px solid rgba(255, 200, 0, 0.4); border-radius:4px; font-size:12px; color:#e0c060;">
         ⚡ This ad set has Dynamic Creative on, which limits it to <b>one ad max</b>. Click <b>"duplicate selected"</b> above to make a copy first, then submit.
+      </div>
+      <div id="va-adset-guided-warn" style="display:none; margin-top:6px; padding:6px 9px; background:rgba(255, 80, 80, 0.10); border:1px solid rgba(255, 80, 80, 0.4); border-radius:4px; font-size:12px; color:#ff8080;">
+        🚫 This campaign was made via Meta's <b>Guided Creation</b> flow. The Marketing API can't add ads to it — only Ads Manager UI can. Pick an ad set in a campaign created via "Advanced creation" in Ads Manager, or recreate this campaign manually.
       </div>
       <input id="va-adset" placeholder="6123456789012" style="display:none; margin-top:6px;">
 
@@ -815,15 +977,8 @@
       <div class="hint" id="va-info"></div>
     </div>
 
-  </section>
+    </div>  <!-- / va-legacy-form -->
 
-  <section class="pane-right">
-    <div class="toolbar">
-      <h2 style="margin:0;">Video ad submissions</h2>
-      <button class="btn ghost small" id="va-refresh">Refresh</button>
-    </div>
-    <div id="va-list" class="va-list"></div>
-    <div id="va-empty" class="empty">No video ads submitted yet.</div>
   </section>
 </main>
 
@@ -3587,16 +3742,46 @@ function vaCreds() {
 }
 
 // ---- Dropbox browser ----
-// Folder listings get cached for 30 seconds to make backtracking instant.
-// Cached only for non-cursor (first-page) reads; pagination skips cache.
+// Folder listings get cached aggressively. TTL is 30 minutes. Cache is also
+// persisted to localStorage so navigation is instant across page refreshes.
+// On first visit to a folder, we trigger background prefetch for all its
+// subfolders, so when you click into one it's already cached.
+const DBX_CACHE_TTL_MS = 30 * 60 * 1000;  // 30 minutes
+const DBX_CACHE_LS_KEY = 'dbx-list-cache-v1';
 const dbxListCache = new Map();
-const DBX_CACHE_TTL_MS = 30_000;
+
+// Hydrate from localStorage on init
+try {
+  const raw = localStorage.getItem(DBX_CACHE_LS_KEY);
+  if (raw) {
+    const obj = JSON.parse(raw);
+    const now = Date.now();
+    for (const [k, v] of Object.entries(obj)) {
+      if (v && v.t && (now - v.t) < DBX_CACHE_TTL_MS) {
+        dbxListCache.set(k, v);
+      }
+    }
+  }
+} catch (_) {}
 
 function dbxCacheKey(path) {
   return `${dbxModalRoot}:${path}`;
 }
 
-async function dbxList(path = '', cursor = null) {
+let _dbxCacheSaveTimer = null;
+function dbxPersistCache() {
+  if (_dbxCacheSaveTimer) clearTimeout(_dbxCacheSaveTimer);
+  _dbxCacheSaveTimer = setTimeout(() => {
+    try {
+      // Cap at most-recent 200 entries to keep localStorage small
+      const all = [...dbxListCache.entries()].sort((a, b) => b[1].t - a[1].t).slice(0, 200);
+      const obj = Object.fromEntries(all);
+      localStorage.setItem(DBX_CACHE_LS_KEY, JSON.stringify(obj));
+    } catch (_) {}
+  }, 1000);
+}
+
+async function dbxList(path = '', cursor = null, opts = {}) {
   const c = vaCreds();
   if (!c.dbxKey || !c.dbxSecret || !c.dbxRefresh) {
     throw new Error('Dropbox not configured. Set App Key, Secret, and Refresh Token above.');
@@ -3604,7 +3789,7 @@ async function dbxList(path = '', cursor = null) {
   if (!sb) throw new Error('Supabase not connected (Static images tab → connect first).');
 
   // Cache hit?
-  if (!cursor) {
+  if (!cursor && !opts.skipCache) {
     const cached = dbxListCache.get(dbxCacheKey(path));
     if (cached && (Date.now() - cached.t) < DBX_CACHE_TTL_MS) {
       return cached.data;
@@ -3630,12 +3815,40 @@ async function dbxList(path = '', cursor = null) {
   const data = await res.json();
   if (!cursor && !data.error) {
     dbxListCache.set(dbxCacheKey(path), { t: Date.now(), data });
+    dbxPersistCache();
+
+    // Prefetch all immediate subfolders in parallel — by the time user
+    // clicks into one, it's already cached. Cap at 6 concurrent to be polite.
+    if (!opts.skipPrefetch && data.folders?.length) {
+      const subFolders = data.folders.slice(0, 12);
+      const concurrency = 6;
+      // Run in background; don't await
+      (async () => {
+        let i = 0;
+        const workers = [];
+        for (let w = 0; w < concurrency; w++) {
+          workers.push((async () => {
+            while (i < subFolders.length) {
+              const f = subFolders[i++];
+              if (!f) break;
+              const k = dbxCacheKey(f.path);
+              if (dbxListCache.has(k)) continue;
+              try { await dbxList(f.path, null, { skipPrefetch: true }); } catch (_) {}
+            }
+          })());
+        }
+        await Promise.all(workers);
+      })();
+    }
   }
   return data;
 }
 
 // Invalidate cache when user explicitly switches namespace (team↔personal)
-function dbxInvalidateCache() { dbxListCache.clear(); }
+function dbxInvalidateCache() {
+  dbxListCache.clear();
+  try { localStorage.removeItem(DBX_CACHE_LS_KEY); } catch (_) {}
+}
 
 async function dbxSharedLink(path) {
   const c = vaCreds();
@@ -3868,6 +4081,17 @@ function renderDbxRows(entries, isSearch) {
 
   $('dbx-modal-list').querySelectorAll('[data-folder]').forEach(r => {
     r.onclick = () => dbxNavigate(r.dataset.folder);
+    // Prefetch on hover too — even if we already prefetched the visible
+    // siblings, this catches grandchildren when user hovers before clicking.
+    let hoverTimer = null;
+    r.addEventListener('mouseenter', () => {
+      hoverTimer = setTimeout(() => {
+        dbxList(r.dataset.folder, null, { skipPrefetch: false }).catch(() => {});
+      }, 150);
+    });
+    r.addEventListener('mouseleave', () => {
+      if (hoverTimer) clearTimeout(hoverTimer);
+    });
   });
 
   $('dbx-modal-list').querySelectorAll('[data-file]').forEach(r => {
@@ -4325,6 +4549,16 @@ comboInit('combo-adset', (it) => {
       warn.style.display = 'none';
     }
   }
+
+  // Warn if guided creation / Advantage+ — Meta blocks API ad creation entirely
+  const guidedWarn = $('va-adset-guided-warn');
+  if (guidedWarn) {
+    if (it && it._raw?.smart_promotion_type) {
+      guidedWarn.style.display = '';
+    } else {
+      guidedWarn.style.display = 'none';
+    }
+  }
 });
 comboInit('combo-page');
 comboInit('combo-ig');
@@ -4370,6 +4604,9 @@ async function vaLoadOptions() {
       const flags = [];
       if (s.status === 'PAUSED') flags.push('paused');
       if (s.is_dynamic_creative) flags.push('⚡ dynamic creative');
+      if (s.smart_promotion_type === 'GUIDED_CREATION') flags.push('🚫 guided creation — API blocked');
+      else if (s.smart_promotion_type === 'AUTOMATED_SHOPPING_ADS') flags.push('🚫 Advantage+ shopping — API blocked');
+      else if (s.smart_promotion_type) flags.push(`🚫 ${s.smart_promotion_type} — API blocked`);
       const flagSuffix = flags.length ? ` (${flags.join(', ')})` : '';
       return {
         id: s.id,
@@ -4745,6 +4982,655 @@ async function loadAdAsTemplate(adId) {
     $('va-template-err').textContent = e.message;
   }
 }
+
+// ---- video ad spreadsheet ----
+//
+// The spreadsheet UI sits on top of the legacy form. Each row holds its own
+// state. To submit, we copy that row's data into the legacy form fields and
+// click the legacy submit button. This reuses 100% of the working logic.
+//
+// Persistence: rows are saved to localStorage so refresh doesn't lose drafts.
+
+const VA_SHEET_KEY = 'va-sheet-rows-v1';
+let vaSheetRows = [];   // array of {id, data}
+
+function vaSheetNewRow(data = {}) {
+  return {
+    id: 'row_' + Math.random().toString(36).slice(2, 9),
+    data: {
+      name: '',
+      ad_set_id: '',
+      ad_set_label: '',
+      page_id: '',
+      page_label: '',
+      ig_id: '',
+      ig_label: '',
+      creative_type: 'video',
+      pick_9_16: null,    // {source, kind, path?, name, root?, libraryPath?, metaId?, metaHash?}
+      pick_1_1: null,
+      primary_text: '',
+      headline: '',
+      description: '',
+      link_url: '',
+      cta_type: 'LEARN_MORE',
+      disable_enh: true,
+      status: 'draft',    // 'draft' | 'submitting' | 'success' | 'failed'
+      error: '',
+      submitted_job_id: null,
+      source_ad_id: null,
+      ...data,
+    },
+  };
+}
+
+function vaSheetSave() {
+  try { localStorage.setItem(VA_SHEET_KEY, JSON.stringify(vaSheetRows)); } catch (_) {}
+  $('va-sheet-count').textContent = `${vaSheetRows.length} draft${vaSheetRows.length === 1 ? '' : 's'}`;
+}
+
+function vaSheetLoad() {
+  try {
+    const raw = localStorage.getItem(VA_SHEET_KEY);
+    if (raw) vaSheetRows = JSON.parse(raw) || [];
+  } catch (_) { vaSheetRows = []; }
+  if (vaSheetRows.length === 0) {
+    vaSheetRows.push(vaSheetNewRow());
+  }
+}
+
+function vaSheetRender() {
+  const tbody = $('va-sheet-body');
+  tbody.innerHTML = '';
+  vaSheetRows.forEach((row, idx) => {
+    tbody.appendChild(vaSheetRowEl(row, idx));
+  });
+  vaSheetSave();
+}
+
+function vaSheetRowEl(row, idx) {
+  const tr = document.createElement('tr');
+  tr.className = 'va-row';
+  if (row.data.status === 'submitting') tr.classList.add('is-submitting');
+  if (row.data.status === 'failed')     tr.classList.add('is-failed');
+  if (row.data.status === 'success')    tr.classList.add('is-success');
+  tr.dataset.rowId = row.id;
+
+  // Helper: one-shot value updater
+  const update = (key, val) => { row.data[key] = val; vaSheetSave(); };
+
+  // Handle cell
+  const tdHandle = document.createElement('td');
+  tdHandle.className = 'va-row-handle';
+  tdHandle.textContent = (idx + 1).toString();
+  tr.appendChild(tdHandle);
+
+  // Ad name
+  const tdName = document.createElement('td');
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.value = row.data.name;
+  nameInput.placeholder = 'Ad name';
+  nameInput.oninput = () => update('name', nameInput.value);
+  tdName.appendChild(nameInput);
+  tr.appendChild(tdName);
+
+  // Ad set — dropdown using all loaded ad sets (cache from combo-adset items)
+  const tdAdset = document.createElement('td');
+  const adsetSelect = vaMakeMiniSelect('combo-adset', row.data.ad_set_id, (item) => {
+    update('ad_set_id', item ? item.id : '');
+    update('ad_set_label', item ? item.label : '');
+  });
+  tdAdset.appendChild(adsetSelect);
+  tr.appendChild(tdAdset);
+
+  // Page
+  const tdPage = document.createElement('td');
+  const pageSelect = vaMakeMiniSelect('combo-page', row.data.page_id, (item) => {
+    update('page_id', item ? item.id : '');
+    update('page_label', item ? item.label : '');
+  });
+  tdPage.appendChild(pageSelect);
+  tr.appendChild(tdPage);
+
+  // IG
+  const tdIg = document.createElement('td');
+  const igSelect = vaMakeMiniSelect('combo-ig', row.data.ig_id, (item) => {
+    update('ig_id', item ? item.id : '');
+    update('ig_label', item ? item.label : '');
+  });
+  tdIg.appendChild(igSelect);
+  tr.appendChild(tdIg);
+
+  // Creative type
+  const tdType = document.createElement('td');
+  const typeWrap = document.createElement('div');
+  typeWrap.className = 'va-creative-type-toggle';
+  const typeVid = document.createElement('button');
+  typeVid.textContent = 'V'; typeVid.title = 'Video';
+  if (row.data.creative_type === 'video') typeVid.classList.add('active');
+  const typeImg = document.createElement('button');
+  typeImg.textContent = 'I'; typeImg.title = 'Image';
+  if (row.data.creative_type === 'image') typeImg.classList.add('active');
+  typeVid.onclick = () => {
+    update('creative_type', 'video'); vaSheetRender();
+  };
+  typeImg.onclick = () => {
+    update('creative_type', 'image'); vaSheetRender();
+  };
+  typeWrap.appendChild(typeVid); typeWrap.appendChild(typeImg);
+  tdType.appendChild(typeWrap);
+  tr.appendChild(tdType);
+
+  // 9:16 asset
+  const td916 = document.createElement('td');
+  td916.appendChild(vaSheetAssetCell(row, '9:16'));
+  tr.appendChild(td916);
+
+  // 1:1 asset
+  const td11 = document.createElement('td');
+  td11.appendChild(vaSheetAssetCell(row, '1:1'));
+  tr.appendChild(td11);
+
+  // Primary text
+  const tdPrimary = document.createElement('td');
+  const primaryArea = document.createElement('textarea');
+  primaryArea.value = row.data.primary_text;
+  primaryArea.placeholder = 'Primary text';
+  primaryArea.oninput = () => update('primary_text', primaryArea.value);
+  tdPrimary.appendChild(primaryArea);
+  tr.appendChild(tdPrimary);
+
+  // Headline
+  const tdHeadline = document.createElement('td');
+  const headlineInput = document.createElement('input');
+  headlineInput.type = 'text';
+  headlineInput.maxLength = 40;
+  headlineInput.value = row.data.headline;
+  headlineInput.placeholder = 'Headline';
+  headlineInput.oninput = () => update('headline', headlineInput.value);
+  tdHeadline.appendChild(headlineInput);
+  tr.appendChild(tdHeadline);
+
+  // Destination URL
+  const tdLink = document.createElement('td');
+  const linkInput = document.createElement('input');
+  linkInput.type = 'url';
+  linkInput.value = row.data.link_url;
+  linkInput.placeholder = 'https://…';
+  linkInput.oninput = () => update('link_url', linkInput.value);
+  tdLink.appendChild(linkInput);
+  tr.appendChild(tdLink);
+
+  // CTA
+  const tdCta = document.createElement('td');
+  const ctaSel = document.createElement('select');
+  const ctaOpts = ['LEARN_MORE','SHOP_NOW','SIGN_UP','GET_OFFER','ORDER_NOW','DOWNLOAD','SUBSCRIBE','CONTACT_US','GET_QUOTE','BOOK_TRAVEL','WATCH_MORE','APPLY_NOW','SEE_MORE'];
+  for (const o of ctaOpts) {
+    const opt = document.createElement('option');
+    opt.value = o; opt.textContent = o.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+    if (row.data.cta_type === o) opt.selected = true;
+    ctaSel.appendChild(opt);
+  }
+  ctaSel.onchange = () => update('cta_type', ctaSel.value);
+  tdCta.appendChild(ctaSel);
+  tr.appendChild(tdCta);
+
+  // Status cell
+  const tdStatus = document.createElement('td');
+  tdStatus.className = 'va-cell-status';
+  let statusHtml = '';
+  if (row.data.status === 'draft')      statusHtml = '<span style="color:var(--ink-low);">draft</span>';
+  if (row.data.status === 'submitting') statusHtml = '<span style="color:#88aaee;">⏳ submitting</span>';
+  if (row.data.status === 'success')    statusHtml = `<span style="color:var(--accent);">✓ submitted</span>`;
+  if (row.data.status === 'failed')     statusHtml = `<span style="color:var(--danger);" title="${escape(row.data.error || '')}">✗ failed</span>`;
+  tdStatus.innerHTML = statusHtml;
+  tr.appendChild(tdStatus);
+
+  // Actions
+  const tdActions = document.createElement('td');
+  tdActions.className = 'va-cell-actions';
+  const submitBtn = document.createElement('button');
+  submitBtn.className = 'btn small';
+  submitBtn.textContent = 'Submit';
+  submitBtn.disabled = row.data.status === 'submitting' || row.data.status === 'success';
+  submitBtn.onclick = () => vaSheetSubmitRow(row);
+  const dupBtn = document.createElement('button');
+  dupBtn.className = 'btn ghost small';
+  dupBtn.textContent = '⎘'; dupBtn.title = 'Duplicate row';
+  dupBtn.onclick = () => {
+    const copy = vaSheetNewRow({
+      ...row.data,
+      name: row.data.name ? row.data.name + ' (copy)' : '',
+      status: 'draft',
+      error: '',
+      submitted_job_id: null,
+    });
+    const i = vaSheetRows.findIndex(r => r.id === row.id);
+    vaSheetRows.splice(i + 1, 0, copy);
+    vaSheetRender();
+  };
+  const delBtn = document.createElement('button');
+  delBtn.className = 'btn ghost small';
+  delBtn.textContent = '×'; delBtn.title = 'Delete row';
+  delBtn.onclick = () => {
+    if (vaSheetRows.length === 1) {
+      // Don't delete last row, just clear it
+      vaSheetRows[0] = vaSheetNewRow();
+    } else {
+      vaSheetRows = vaSheetRows.filter(r => r.id !== row.id);
+    }
+    vaSheetRender();
+  };
+  tdActions.appendChild(submitBtn);
+  tdActions.appendChild(dupBtn);
+  tdActions.appendChild(delBtn);
+  tr.appendChild(tdActions);
+
+  return tr;
+}
+
+// Build a small native <select> populated from the items of a master combobox.
+// This is way more compact in a table cell than the full combo widget. The
+// callback fires with the selected item object (or null).
+function vaMakeMiniSelect(masterComboId, currentId, onChange) {
+  const sel = document.createElement('select');
+  const master = document.getElementById(masterComboId);
+  const items = master?.__items || [];
+
+  const blank = document.createElement('option');
+  blank.value = ''; blank.textContent = '—';
+  sel.appendChild(blank);
+
+  for (const it of items) {
+    const opt = document.createElement('option');
+    opt.value = it.id;
+    opt.textContent = it.label;
+    if (it.id === currentId) opt.selected = true;
+    sel.appendChild(opt);
+  }
+
+  // Show a placeholder if currentId isn't in master's items (perhaps options
+  // haven't loaded yet, or the saved value is stale)
+  if (currentId && !items.some(i => i.id === currentId)) {
+    const opt = document.createElement('option');
+    opt.value = currentId;
+    opt.textContent = `(unknown: ${currentId.slice(0, 16)}…)`;
+    opt.selected = true;
+    sel.appendChild(opt);
+  }
+
+  sel.onchange = () => {
+    const item = items.find(i => i.id === sel.value) || null;
+    onChange(item);
+  };
+
+  return sel;
+}
+
+function vaSheetAssetCell(row, aspect) {
+  const wrap = document.createElement('div');
+  wrap.className = 'va-cell-asset';
+  const pickKey = aspect === '9:16' ? 'pick_9_16' : 'pick_1_1';
+  const pick = row.data[pickKey];
+
+  const nameDiv = document.createElement('div');
+  nameDiv.className = 'pick-name';
+  if (pick) {
+    nameDiv.textContent = pick.name;
+    nameDiv.classList.add('has-pick');
+    nameDiv.title = pick.name + (pick.path ? ' · ' + pick.path : '');
+  } else {
+    nameDiv.textContent = `No ${row.data.creative_type} selected`;
+  }
+  wrap.appendChild(nameDiv);
+
+  const dbxBtn = document.createElement('button');
+  dbxBtn.className = 'btn ghost small';
+  dbxBtn.textContent = '📦';
+  dbxBtn.title = 'Pick from Dropbox';
+  dbxBtn.onclick = () => vaSheetPickFromDropbox(row, aspect);
+  wrap.appendChild(dbxBtn);
+
+  if (row.data.creative_type === 'image') {
+    const libBtn = document.createElement('button');
+    libBtn.className = 'btn ghost small';
+    libBtn.textContent = '🖼';
+    libBtn.title = 'Pick from library';
+    libBtn.onclick = () => vaSheetPickFromLibrary(row, aspect);
+    wrap.appendChild(libBtn);
+
+    // Also allow library lookup by name — quick text input
+    const lookupBtn = document.createElement('button');
+    lookupBtn.className = 'btn ghost small';
+    lookupBtn.textContent = '🔎';
+    lookupBtn.title = 'Library lookup by name';
+    lookupBtn.onclick = () => vaSheetLibLookup(row, aspect);
+    wrap.appendChild(lookupBtn);
+  }
+
+  if (pick) {
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'btn ghost small';
+    clearBtn.textContent = '×';
+    clearBtn.title = 'Clear';
+    clearBtn.onclick = () => {
+      row.data[pickKey] = null;
+      vaSheetSave();
+      vaSheetRender();
+    };
+    wrap.appendChild(clearBtn);
+  }
+
+  return wrap;
+}
+
+// Simple library lookup: prompt for ad name, look up in variants table, pick best match
+async function vaSheetLibLookup(row, aspect) {
+  if (!sb) { alert('Connect Supabase first.'); return; }
+  const query = prompt('Search library by name (display_name):', row.data.name || '');
+  if (!query || !query.trim()) return;
+
+  // Match aspect for the slot
+  const aspectKey = aspect;
+  const { data, error } = await sb.from('variants')
+    .select('id, output_path, display_name, aspect, prompt')
+    .eq('status', 'completed')
+    .eq('aspect', aspectKey)
+    .ilike('display_name', `%${query.trim()}%`)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (error) { alert('Library search failed: ' + error.message); return; }
+  if (!data || data.length === 0) { alert('No matches found.'); return; }
+
+  // If exactly one match, just use it
+  let chosen;
+  if (data.length === 1) {
+    chosen = data[0];
+  } else {
+    // Multiple matches — ask user
+    const list = data.map((v, i) => `${i + 1}. ${v.display_name || '(no name)'}`).join('\n');
+    const idx = prompt(`${data.length} matches. Pick number:\n${list}`, '1');
+    const n = parseInt(idx, 10);
+    if (!n || n < 1 || n > data.length) return;
+    chosen = data[n - 1];
+  }
+
+  const pickKey = aspect === '9:16' ? 'pick_9_16' : 'pick_1_1';
+  row.data[pickKey] = {
+    source: 'library',
+    kind: 'image',
+    libraryPath: chosen.output_path,
+    name: chosen.display_name || `variant ${chosen.id.slice(0, 8)}`,
+  };
+  vaSheetSave();
+  vaSheetRender();
+}
+
+// Reuse the existing Dropbox modal — open it, set callbacks to update this row.
+let vaActiveSheetRow = null;
+let vaActiveSheetAspect = null;
+
+async function vaSheetPickFromDropbox(row, aspect) {
+  vaActiveSheetRow = row;
+  vaActiveSheetAspect = aspect;
+  // Set the existing dbxModalAspect so the Dropbox modal works
+  dbxModalAspect = aspect;
+  // Set vaCreativeType so the picker filters correctly
+  vaCreativeType = row.data.creative_type;
+  await openDbxPicker(aspect);
+}
+
+async function vaSheetPickFromLibrary(row, aspect) {
+  vaActiveSheetRow = row;
+  vaActiveSheetAspect = aspect;
+  vaCreativeType = row.data.creative_type;
+  await openLibPicker(aspect);
+}
+
+// Hook into the existing pick handlers — when the Dropbox modal sets vaPicked,
+// we copy the result to the active spreadsheet row instead of the legacy form.
+const _originalVaPickedSetter = (() => {
+  // After a pick, the original code also updates legacy form labels and shows
+  // the clear button. We override the post-pick UI updates to instead update
+  // our spreadsheet row and re-render the table.
+  return null;
+})();
+
+// Watch for changes to vaPicked from the Dropbox/Library pickers and route
+// them back to the active sheet row when one is set.
+function vaSheetCapturePickIfActive() {
+  if (!vaActiveSheetRow || !vaActiveSheetAspect) return false;
+  const pick = vaPicked[vaActiveSheetAspect];
+  if (!pick) return false;
+  const pickKey = vaActiveSheetAspect === '9:16' ? 'pick_9_16' : 'pick_1_1';
+  vaActiveSheetRow.data[pickKey] = pick;
+  // Reset the legacy form's vaPicked so it doesn't leak into the next pick
+  vaPicked[vaActiveSheetAspect] = null;
+  vaActiveSheetRow = null;
+  vaActiveSheetAspect = null;
+  vaSheetSave();
+  vaSheetRender();
+  return true;
+}
+
+// Patch the close events on the picker modals to capture picks
+$('dbx-modal').addEventListener('click', () => setTimeout(vaSheetCapturePickIfActive, 50), true);
+$('va-lib-modal').addEventListener('click', () => setTimeout(vaSheetCapturePickIfActive, 50), true);
+// Also poll briefly after any modal closes (modal click capture sometimes races)
+const _vaSheetCapturePoll = () => {
+  if (!vaActiveSheetRow) return;
+  if ($('dbx-modal').classList.contains('open') || $('va-lib-modal').classList.contains('open')) {
+    setTimeout(_vaSheetCapturePoll, 300);
+  } else {
+    vaSheetCapturePickIfActive();
+  }
+};
+const _vaSheetOriginalOpenDbx = openDbxPicker;
+window.openDbxPicker = async (aspect) => {
+  await _vaSheetOriginalOpenDbx(aspect);
+  if (vaActiveSheetRow) setTimeout(_vaSheetCapturePoll, 500);
+};
+
+// ---- Submit a single sheet row ----
+async function vaSheetSubmitRow(row) {
+  const d = row.data;
+  if (row.data.status === 'submitting') return;
+
+  // Validation
+  if (!sb) { alert('Connect Supabase first.'); return; }
+  const c = vaCreds();
+  if (!c.metaAcct || !c.metaToken) { alert('Set Meta credentials first (open Connections).'); return; }
+  if (!d.name) { alert('Row needs an ad name'); return; }
+  if (!d.ad_set_id) { alert('Row needs an ad set'); return; }
+  if (!d.page_id)   { alert('Row needs a page'); return; }
+  if (!d.primary_text) { alert('Row needs primary text'); return; }
+  if (!d.link_url)  { alert('Row needs a destination URL'); return; }
+  if (!d.pick_9_16 && !d.pick_1_1) { alert('Row needs at least one creative (9:16 or 1:1)'); return; }
+
+  d.status = 'submitting';
+  d.error = '';
+  vaSheetRender();
+
+  try {
+    const p916 = d.pick_9_16;
+    const p11  = d.pick_1_1;
+
+    function dbxPathFor(p) { return (p?.source === 'dropbox') ? p.path : null; }
+    function dbxRootFor(p) { return (p?.source === 'dropbox') ? (p.root || 'team') : 'team'; }
+    function libPathFor(p) { return (p?.source === 'library') ? p.libraryPath : null; }
+    function metaIdFor(p)   { return (p?.source === 'existing' && p.kind === 'video') ? p.metaId : null; }
+    function metaHashFor(p) { return (p?.source === 'existing' && p.kind === 'image') ? p.metaHash : null; }
+
+    const allExisting =
+      (p916 ? p916.source === 'existing' : true) &&
+      (p11  ? p11.source  === 'existing' : true) &&
+      (p916 || p11);
+    const initialStatus = allExisting ? 'creating' : 'pending';
+
+    const insertRow = {
+      display_name: d.name,
+      ad_account_id: c.metaAcct.startsWith('act_') ? c.metaAcct : `act_${c.metaAcct}`,
+      ad_set_id: d.ad_set_id,
+      page_id: d.page_id,
+      instagram_actor_id: d.ig_id || null,
+      primary_text: d.primary_text,
+      headline: d.headline || null,
+      description: d.description || null,
+      link_url: d.link_url,
+      cta_type: d.cta_type,
+      creative_type: d.creative_type,
+      video_9_16_dropbox_path: dbxPathFor(p916),
+      video_9_16_dropbox_root: dbxRootFor(p916),
+      video_1_1_dropbox_path:  dbxPathFor(p11),
+      video_1_1_dropbox_root:  dbxRootFor(p11),
+      image_9_16_library_path: libPathFor(p916),
+      image_1_1_library_path:  libPathFor(p11),
+      video_9_16_meta_id:      metaIdFor(p916),
+      video_1_1_meta_id:       metaIdFor(p11),
+      image_9_16_meta_hash:    metaHashFor(p916),
+      image_1_1_meta_hash:     metaHashFor(p11),
+      source_ad_id:            d.source_ad_id || null,
+      meta_access_token:       c.metaToken,
+      dropbox_app_key:         c.dbxAppKey,
+      dropbox_app_secret:      c.dbxAppSecret,
+      dropbox_refresh_token:   c.dbxRefresh,
+      dropbox_team_member_id:  c.dbxTeamId || null,
+      disable_enhancements:    d.disable_enh,
+      status: initialStatus,
+    };
+    const { data: inserted, error } = await sb.from('video_ad_jobs').insert(insertRow).select('id').single();
+    if (error) throw new Error(error.message);
+
+    // Kick the worker
+    fetch(`${$('sb-url').value}/functions/v1/meta-upload-video-ad`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${$('sb-key').value}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ video_ad_job_id: inserted.id }),
+    }).catch(() => {});
+
+    d.status = 'success';
+    d.submitted_job_id = inserted.id;
+    vaSheetRender();
+    vaRefreshList();
+  } catch (e) {
+    d.status = 'failed';
+    d.error = e.message;
+    vaSheetRender();
+  }
+}
+
+// Submit-all: submits every row that isn't success/submitting
+async function vaSheetSubmitAll() {
+  const ready = vaSheetRows.filter(r => r.data.status === 'draft' || r.data.status === 'failed');
+  if (ready.length === 0) {
+    alert('No rows ready to submit.');
+    return;
+  }
+  if (!confirm(`Submit ${ready.length} row${ready.length === 1 ? '' : 's'}?`)) return;
+  // Submit serially to avoid hammering Supabase + giving rows visible feedback in order
+  for (const row of ready) {
+    await vaSheetSubmitRow(row);
+  }
+}
+
+// ---- Spreadsheet wiring ----
+
+$('va-sheet-add-row').onclick = () => {
+  vaSheetRows.push(vaSheetNewRow());
+  vaSheetRender();
+};
+
+$('va-sheet-submit-all').onclick = vaSheetSubmitAll;
+
+$('va-sheet-load-template').onclick = () => {
+  // Open existing template modal — but capture the result into a new row
+  vaSheetTemplateMode = true;
+  $('va-load-template').click();
+};
+let vaSheetTemplateMode = false;
+
+// Hook into the legacy form's template-loaded state. After "Load fields" runs,
+// it has populated the legacy form. Capture those values into a new sheet row.
+function vaSheetCaptureFromLegacyForm() {
+  if (!vaSheetTemplateMode) return;
+  vaSheetTemplateMode = false;
+
+  const newRow = vaSheetNewRow();
+  newRow.data.name = $('va-name').value;
+  newRow.data.ad_set_id = document.getElementById('combo-adset').__getValue() || $('va-adset').value;
+  // Find label in items
+  const adsetItem = document.getElementById('combo-adset').__items.find(i => i.id === newRow.data.ad_set_id);
+  if (adsetItem) newRow.data.ad_set_label = adsetItem.label;
+  newRow.data.page_id = document.getElementById('combo-page').__getValue() || $('va-page').value;
+  const pageItem = document.getElementById('combo-page').__items.find(i => i.id === newRow.data.page_id);
+  if (pageItem) newRow.data.page_label = pageItem.label;
+  newRow.data.ig_id = document.getElementById('combo-ig').__getValue() || '';
+  const igItem = document.getElementById('combo-ig').__items.find(i => i.id === newRow.data.ig_id);
+  if (igItem) newRow.data.ig_label = igItem.label;
+  const ctype = document.querySelector('input[name="va-creative-type"]:checked')?.value || 'video';
+  newRow.data.creative_type = ctype;
+  newRow.data.primary_text = $('va-primary').value;
+  newRow.data.headline = $('va-headline').value;
+  newRow.data.description = $('va-description').value;
+  newRow.data.link_url = $('va-link').value;
+  newRow.data.cta_type = $('va-cta').value;
+  newRow.data.disable_enh = $('va-disable-enh').checked;
+  if (vaPicked['9:16']) newRow.data.pick_9_16 = vaPicked['9:16'];
+  if (vaPicked['1:1'])  newRow.data.pick_1_1  = vaPicked['1:1'];
+  newRow.data.source_ad_id = window.__sourceAdId || null;
+  // Reset shared state
+  vaPicked['9:16'] = null; vaPicked['1:1'] = null;
+  window.__sourceAdId = null;
+
+  vaSheetRows.push(newRow);
+  vaSheetRender();
+}
+// Watch legacy template modal for close (post-success)
+const _legacyTemplateModal = $('va-template-modal');
+new MutationObserver(() => {
+  if (!_legacyTemplateModal.classList.contains('open') && vaSheetTemplateMode) {
+    setTimeout(vaSheetCaptureFromLegacyForm, 100);
+  }
+}).observe(_legacyTemplateModal, { attributes: true, attributeFilter: ['class'] });
+
+// Connections collapse toggle. The body holds the legacy form contents, which
+// we move there on init so they remain functional.
+$('va-connections-toggle').onclick = () => {
+  const body = $('va-connections-body');
+  const visible = body.style.display !== 'none';
+  body.style.display = visible ? 'none' : '';
+  $('va-connections').classList.toggle('expanded', !visible);
+  $('va-connections-toggle').textContent = visible ? '▾ Connections' : '▴ Connections';
+};
+
+$('va-options-refresh-top').onclick = () => $('va-options-refresh').click();
+
+// On init: move the legacy connection cards (Meta + Dropbox) into the
+// connections strip body so they're accessible via the toggle.
+function vaMoveLegacyConnections() {
+  const body = $('va-connections-body');
+  const legacy = $('va-legacy-form');
+  if (!body || !legacy) return;
+  const cards = legacy.querySelectorAll(':scope > .card');
+  // First two cards are Meta + Dropbox — third is Create video ad form
+  if (cards[0]) body.appendChild(cards[0]);  // Meta connection
+  if (cards[1]) body.appendChild(cards[1]);  // Dropbox connection
+  // Update conn summary
+  const c = vaCreds();
+  const parts = [];
+  if (c.metaAcct) parts.push('Meta ✓');
+  if (c.dbxKey)   parts.push('Dropbox ✓');
+  $('va-conn-summary').textContent = parts.length ? parts.join(' · ') : 'set up to start';
+}
+
+// Init the spreadsheet on page load
+vaSheetLoad();
+vaMoveLegacyConnections();
+vaSheetRender();
 
 // ---- video ad list ----
 $('va-refresh').onclick = vaRefreshList;
