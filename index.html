@@ -673,6 +673,12 @@
       <div style="height:8px"></div>
       <label>Refresh Token</label>
       <input id="dbx-refresh" type="password" placeholder="long-lived offline token">
+      <div style="height:8px"></div>
+      <label>Team Member ID <span class="hint" style="display:inline">(only for Dropbox Business — leave blank for personal)</span></label>
+      <div style="display:flex; gap:6px;">
+        <input id="dbx-team-member" placeholder="e.g. dbmid:AAH..." style="flex:1;">
+        <button class="btn ghost small" id="dbx-find-member" title="List team members and pick yourself">Find me</button>
+      </div>
       <div class="hint">One-time setup. See README for how to generate the refresh token. All saved to localStorage.</div>
       <div style="height:10px"></div>
       <button class="btn ghost small" id="dbx-save">Save</button>
@@ -797,6 +803,19 @@
 <!-- Dropbox file picker modal -->
 <!-- Template-from-existing-ad modal -->
 <!-- Duplicate ad set modal -->
+<!-- Dropbox team member picker modal -->
+<div class="modal-bg" id="dbx-team-modal">
+  <div class="modal" style="width:min(560px, 92vw); max-height:85vh; display:flex; flex-direction:column;">
+    <h3 style="margin:0 0 4px;">Pick your team member ID</h3>
+    <p class="hint" style="margin-top:0;">Click your account in the list. The ID will be saved automatically.</p>
+    <div id="dbx-team-list" style="overflow:auto; flex:1; margin-top:10px; border:1px solid var(--line); border-radius:var(--radius);"></div>
+    <div class="row" style="margin-top:14px;">
+      <button class="btn ghost" id="dbx-team-cancel">Close</button>
+    </div>
+    <div class="err" id="dbx-team-err"></div>
+  </div>
+</div>
+
 <div class="modal-bg" id="va-dup-modal">
   <div class="modal" style="width:min(480px, 92vw);">
     <h3 style="margin:0 0 4px;">Duplicate ad set</h3>
@@ -3390,14 +3409,15 @@ document.querySelectorAll('.page-tab').forEach(t => {
 
 // ---- Meta + Dropbox creds (localStorage) ----
 const META_KEY    = { acct: 'meta-acct', token: 'meta-token' };
-const DBX_KEY     = { key: 'dbx-key', secret: 'dbx-secret', refresh: 'dbx-refresh' };
+const DBX_KEY     = { key: 'dbx-key', secret: 'dbx-secret', refresh: 'dbx-refresh', teamId: 'dbx-team-member' };
 
 function vaLoadCreds() {
-  $('meta-acct').value    = localStorage.getItem(META_KEY.acct)  || '';
-  $('meta-token').value   = localStorage.getItem(META_KEY.token) || '';
-  $('dbx-key').value      = localStorage.getItem(DBX_KEY.key)     || '';
-  $('dbx-secret').value   = localStorage.getItem(DBX_KEY.secret)  || '';
-  $('dbx-refresh').value  = localStorage.getItem(DBX_KEY.refresh) || '';
+  $('meta-acct').value       = localStorage.getItem(META_KEY.acct)    || '';
+  $('meta-token').value      = localStorage.getItem(META_KEY.token)   || '';
+  $('dbx-key').value         = localStorage.getItem(DBX_KEY.key)      || '';
+  $('dbx-secret').value      = localStorage.getItem(DBX_KEY.secret)   || '';
+  $('dbx-refresh').value     = localStorage.getItem(DBX_KEY.refresh)  || '';
+  $('dbx-team-member').value = localStorage.getItem(DBX_KEY.teamId)   || '';
 }
 $('meta-save').onclick = () => {
   localStorage.setItem(META_KEY.acct,  $('meta-acct').value.trim());
@@ -3411,6 +3431,7 @@ $('dbx-save').onclick = () => {
   localStorage.setItem(DBX_KEY.key,     $('dbx-key').value.trim());
   localStorage.setItem(DBX_KEY.secret,  $('dbx-secret').value.trim());
   localStorage.setItem(DBX_KEY.refresh, $('dbx-refresh').value.trim());
+  localStorage.setItem(DBX_KEY.teamId,  $('dbx-team-member').value.trim());
   $('dbx-conn-status').textContent = 'saved';
   $('dbx-conn-status').style.color = 'var(--accent)';
 };
@@ -3420,7 +3441,8 @@ $('dbx-test').onclick = async () => {
   try {
     const res = await dbxList('');
     if (res.error) throw new Error(res.error);
-    $('dbx-conn-status').textContent = `OK (${res.entries?.length ?? 0} items at root)`;
+    const items = (res.folders?.length ?? 0) + (res.files?.length ?? 0);
+    $('dbx-conn-status').textContent = `OK (${items} items at root)`;
     $('dbx-conn-status').style.color = 'var(--accent)';
   } catch (e) {
     $('dbx-conn-status').textContent = `failed: ${e.message}`;
@@ -3428,13 +3450,81 @@ $('dbx-test').onclick = async () => {
   }
 };
 
+$('dbx-find-member').onclick = async () => {
+  const c = vaCreds();
+  if (!c.dbxKey || !c.dbxSecret || !c.dbxRefresh) {
+    alert('Set App Key, Secret, and Refresh Token first.');
+    return;
+  }
+  if (!sb) { alert('Connect Supabase first (Static images tab).'); return; }
+  $('dbx-team-list').innerHTML = '<div style="padding:20px; text-align:center; color:var(--ink-low);">Loading…</div>';
+  $('dbx-team-err').textContent = '';
+  $('dbx-team-modal').classList.add('open');
+
+  try {
+    const r = await fetch(`${$('sb-url').value}/functions/v1/dropbox-team-members`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${$('sb-key').value}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        dropbox_app_key: c.dbxKey,
+        dropbox_app_secret: c.dbxSecret,
+        dropbox_refresh_token: c.dbxRefresh,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
+
+    if (!data.members || data.members.length === 0) {
+      $('dbx-team-list').innerHTML = '<div style="padding:20px; text-align:center; color:var(--ink-low);">No team members found. Is this actually a Dropbox Business account?</div>';
+      return;
+    }
+
+    const sorted = [...data.members].sort((a, b) => a.email.localeCompare(b.email));
+    $('dbx-team-list').innerHTML = sorted.map(m => {
+      const isMine = data.my_member_id && m.team_member_id === data.my_member_id;
+      return `<div class="dbx-team-item" data-id="${m.team_member_id}" style="padding:10px 12px; border-bottom:1px solid var(--line); cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div style="font-weight:600; color:var(--ink); font-size:13px;">${escape(m.display_name)} ${isMine ? '<span style="color:var(--accent); font-weight:400; font-size:11px;">(probably you)</span>' : ''}</div>
+          <div style="font-size:11px; color:var(--ink-low); font-family:var(--mono);">${escape(m.email)} · ${escape(m.team_member_id)}</div>
+        </div>
+        <button class="btn small" data-pick="${m.team_member_id}">Use this</button>
+      </div>`;
+    }).join('');
+
+    $('dbx-team-list').querySelectorAll('[data-pick]').forEach(b => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        $('dbx-team-member').value = b.dataset.pick;
+        // Auto-save so the user doesn't have to hit Save again
+        localStorage.setItem(DBX_KEY.teamId, b.dataset.pick);
+        $('dbx-team-modal').classList.remove('open');
+        $('dbx-conn-status').textContent = 'team member set — click Test connection';
+        $('dbx-conn-status').style.color = 'var(--accent)';
+      };
+    });
+  } catch (e) {
+    $('dbx-team-err').textContent = e.message;
+    $('dbx-team-list').innerHTML = '';
+  }
+};
+$('dbx-team-cancel').onclick = () => $('dbx-team-modal').classList.remove('open');
+$('dbx-team-modal').onclick = (e) => {
+  if (e.target.id === 'dbx-team-modal') $('dbx-team-modal').classList.remove('open');
+};
+
 function vaCreds() {
   return {
-    metaAcct:  localStorage.getItem(META_KEY.acct)  || '',
-    metaToken: localStorage.getItem(META_KEY.token) || '',
-    dbxKey:    localStorage.getItem(DBX_KEY.key)    || '',
-    dbxSecret: localStorage.getItem(DBX_KEY.secret) || '',
-    dbxRefresh:localStorage.getItem(DBX_KEY.refresh)|| '',
+    metaAcct:    localStorage.getItem(META_KEY.acct)     || '',
+    metaToken:   localStorage.getItem(META_KEY.token)    || '',
+    dbxKey:      localStorage.getItem(DBX_KEY.key)       || '',
+    dbxSecret:   localStorage.getItem(DBX_KEY.secret)    || '',
+    dbxRefresh:  localStorage.getItem(DBX_KEY.refresh)   || '',
+    dbxAppKey:   localStorage.getItem(DBX_KEY.key)       || '',  // alias for clarity in submit handler
+    dbxAppSecret:localStorage.getItem(DBX_KEY.secret)    || '',
+    dbxTeamId:   localStorage.getItem(DBX_KEY.teamId)    || '',
   };
 }
 
@@ -3453,9 +3543,10 @@ async function dbxList(path = '', cursor = null) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      app_key: c.dbxKey,
-      app_secret: c.dbxSecret,
-      refresh_token: c.dbxRefresh,
+      dropbox_app_key: c.dbxKey,
+      dropbox_app_secret: c.dbxSecret,
+      dropbox_refresh_token: c.dbxRefresh,
+      dropbox_team_member_id: c.dbxTeamId || undefined,
       path, cursor,
     }),
   });
@@ -3672,6 +3763,7 @@ $('va-submit').onclick = async () => {
       dropbox_app_key:         c.dbxAppKey,
       dropbox_app_secret:      c.dbxAppSecret,
       dropbox_refresh_token:   c.dbxRefresh,
+      dropbox_team_member_id:  c.dbxTeamId || null,
       disable_enhancements:    disableEnh,
       status: 'pending',
     };
