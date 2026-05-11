@@ -5267,6 +5267,8 @@ function vaSheetNewRow(data = {}) {
       link_url: '',
       cta_type: 'LEARN_MORE',
       disable_enh: true,
+      publish_ad_active: true,
+      publish_adset_active: true,
       status: 'draft',
       error: '',
       submitted_job_id: null,
@@ -6576,6 +6578,8 @@ async function vaSheetSubmitRow(row) {
       dropbox_refresh_token:   c.dbxRefresh,
       dropbox_team_member_id:  c.dbxTeamId || null,
       disable_enhancements:    d.disable_enh,
+      publish_ad_active:       d.publish_ad_active !== false,
+      publish_adset_active:    d.publish_adset_active !== false,
       status: initialStatus,
     };
     const { data: inserted, error } = await sb.from('video_ad_jobs').insert(insertRow).select('id').single();
