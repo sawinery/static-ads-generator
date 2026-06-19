@@ -6505,10 +6505,23 @@ window.openDbxPicker = async (aspect) => {
 };
 
 // ---- Submit a single sheet row ----
+const _submittingRowIds = new Set();
+
 async function vaSheetSubmitRow(row) {
   const d = row.data;
   if (row.data.status === 'submitting') return;
+  if (_submittingRowIds.has(row.id)) return;   // synchronous guard against double-click
+  _submittingRowIds.add(row.id);
 
+  try {
+    await _vaSheetSubmitRowInner(row);
+  } finally {
+    _submittingRowIds.delete(row.id);
+  }
+}
+
+async function _vaSheetSubmitRowInner(row) {
+  const d = row.data;
   // Validation
   if (!sb) { alert('Connect Supabase first.'); return; }
   const c = vaCreds();
@@ -6614,10 +6627,24 @@ async function vaSheetSubmitAll() {
     return;
   }
   if (!confirm(`Submit ${ready.length} row${ready.length === 1 ? '' : 's'}?`)) return;
-  // Submit serially to avoid hammering Supabase + giving rows visible feedback in order
-  for (const row of ready) {
+
+  const btn = $('va-sheet-submit-all');
+  btn.disabled = true;
+  const origText = btn.textContent;
+
+  // Submit serially with a small pause between rows. Helps Meta avoid rate
+  // limits when submitting many ads in quick succession, and gives the worker
+  // time to claim its lease so concurrent heartbeats can't grab the same row.
+  for (let i = 0; i < ready.length; i++) {
+    const row = ready[i];
+    btn.textContent = `Submitting ${i + 1} / ${ready.length}…`;
     await vaSheetSubmitRow(row);
+    // 1.5s between rows: covers DB lease claim + spreads Meta calls out
+    if (i < ready.length - 1) await new Promise(r => setTimeout(r, 1500));
   }
+
+  btn.disabled = false;
+  btn.textContent = origText;
 }
 
 // ---- Spreadsheet wiring ----
