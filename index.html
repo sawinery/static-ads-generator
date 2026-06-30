@@ -899,6 +899,7 @@
             <th style="min-width:170px;">1:1 asset</th>
             <th style="width:280px; min-width:280px; max-width:280px;">Primary text</th>
             <th style="width:200px; min-width:200px; max-width:200px;">Headline</th>
+            <th style="width:180px; min-width:180px; max-width:180px;">Description</th>
             <th style="width:200px; min-width:200px; max-width:200px;">Destination URL</th>
             <th style="min-width:110px;">CTA</th>
             <th style="width:90px;">Status</th>
@@ -5478,6 +5479,18 @@ function vaSheetRowEl(row, idx) {
   const tdHeadline = document.createElement('td');
   tdHeadline.appendChild(vaSheetMultiCell(row, 'headlines', 'Headline', { maxLength: 40 }));
   tr.appendChild(tdHeadline);
+
+  // Description — simple text input, visible per row (not hidden in a drawer
+  // or silently inherited from a duplicated source ad)
+  const tdDescription = document.createElement('td');
+  const descInput = document.createElement('input');
+  descInput.type = 'text';
+  descInput.maxLength = 60;
+  descInput.value = row.data.description || '';
+  descInput.placeholder = 'Optional subline';
+  descInput.oninput = () => update('description', descInput.value);
+  tdDescription.appendChild(descInput);
+  tr.appendChild(tdDescription);
 
   // Destination URL
   const tdLink = document.createElement('td');
