@@ -1804,7 +1804,11 @@ function renderLibraryFolders() {
   });
 }
 
-function renderLibraryGrid() {
+let libraryRenderToken = 0; // guards against a slow page's signed URLs landing after a newer render
+
+async function renderLibraryGrid() {
+  const myToken = ++libraryRenderToken;
+
   const filtered = libraryItems.filter(it => {
     if (librarySelectedFolder === '__all__') return true;
     if (librarySelectedFolder === '__none__') return !it.folder;
@@ -1826,11 +1830,39 @@ function renderLibraryGrid() {
   const pageItems = filtered.slice(start, start + LIBRARY_PAGE_SIZE);
   // Scroll grid back to top whenever we render a new page
   $('library-grid').scrollTop = 0;
+  $('library-grid').innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--ink-low); padding:40px;">Loading…</div>`;
+
+  // Resolve signed URLs for this page BEFORE rendering — one batched call for
+  // everything not already cached, instead of one round-trip per image (was
+  // the source of the lag) — and every <img> gets its real src up front
+  // instead of relying on an async swap-back that only ever patched the
+  // single-ad reference-image previews, never the library grid (the source
+  // of images that never appeared / couldn't be clicked).
+  const urlByPath = {};
+  const toSign = [];
+  for (const it of pageItems) {
+    const cached = readSignedCache(`signed-input:${it.image_path}`);
+    if (cached) urlByPath[it.image_path] = cached;
+    else toSign.push(it.image_path);
+  }
+  if (toSign.length > 0) {
+    const { data, error } = await sb.storage.from('ad-inputs').createSignedUrls(toSign, SIGN_TTL_SECONDS);
+    if (!error && data) {
+      for (const row of data) {
+        if (row.signedUrl) {
+          urlByPath[row.path] = row.signedUrl;
+          writeSignedCache(`signed-input:${row.path}`, row.signedUrl);
+        }
+      }
+    }
+  }
+  // A newer render (page/folder switch) started while we were signing — drop this one.
+  if (myToken !== libraryRenderToken) return;
 
   $('library-grid').innerHTML = pageItems.map(it => `
     <div class="lib-item" data-path="${it.image_path}" data-id="${it.id}">
       <div class="lib-thumb">
-        <img src="${publicInputUrl(it.image_path)}" loading="lazy" alt="">
+        <img src="${urlByPath[it.image_path] || ''}" loading="lazy" alt="">
       </div>
       <div class="lib-meta">
         <div class="lib-label" title="${escape(it.label || it.image_path)}">${escape(it.label || (it.image_path.split('-').slice(1).join('-') || 'image'))}</div>
