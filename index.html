@@ -1794,10 +1794,13 @@ async function openLibrary() {
   $('library-pager').style.display = 'none';
   libraryPage = 0;
 
+  // Sort newest-first, not by folder name — folder is just a client-side
+  // filter (the sidebar), so sorting by it here just meant every new
+  // unfoldered upload sank behind whichever named folders sort earlier,
+  // landing on page 3+ of "All images" instead of showing up immediately.
   const { data: items, error } = await sb
     .from('library_images')
     .select('*')
-    .order('folder', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: false });
   if (error) { $('library-grid').innerHTML = `<div style="color:var(--danger)">${escape(error.message)}</div>`; return; }
   libraryItems = items ?? [];
