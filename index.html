@@ -724,23 +724,24 @@
         </label>
       </div>
 
+      <div style="margin-top:10px">
+        <label>Model</label>
+        <select id="model">
+          <option value="gpt-image-2" selected>gpt-image-2</option>
+          <option value="gpt-image-2.5-flare">gpt-image-2.5-flare (new, fast)</option>
+          <option value="gpt-image-2.5-sunburst">gpt-image-2.5-sunburst (new, best)</option>
+        </select>
+      </div>
+
       <div class="row" style="margin-top:10px">
-        <div>
-          <label>Model</label>
-          <select id="model">
-            <option value="gpt-image-2" selected>gpt-image-2</option>
-            <option value="gpt-image-2.5-flare">gpt-image-2.5-flare (new, fast)</option>
-            <option value="gpt-image-2.5-sunburst">gpt-image-2.5-sunburst (new, best)</option>
-          </select>
-        </div>
         <div>
           <label>Quality</label>
           <select id="quality">
             <option value="low">low (~$0.005)</option>
             <option value="medium" selected>medium (~$0.041)</option>
             <option value="high">high (~$0.165)</option>
-            <option value="xhigh">xhigh (2.5 models only)</option>
-            <option value="max">max (2.5 models only)</option>
+            <option value="xhigh">xhigh (2.5 only)</option>
+            <option value="max">max (2.5 only)</option>
           </select>
         </div>
         <div>
@@ -820,23 +821,24 @@
             </label>
           </div>
 
+          <div style="margin-top:10px">
+            <label>Default model</label>
+            <select id="batch-model">
+              <option value="gpt-image-2" selected>gpt-image-2</option>
+              <option value="gpt-image-2.5-flare">gpt-image-2.5-flare</option>
+              <option value="gpt-image-2.5-sunburst">gpt-image-2.5-sunburst</option>
+            </select>
+          </div>
+
           <div class="row" style="margin-top:10px">
-            <div>
-              <label>Default model</label>
-              <select id="batch-model">
-                <option value="gpt-image-2" selected>gpt-image-2</option>
-                <option value="gpt-image-2.5-flare">gpt-image-2.5-flare</option>
-                <option value="gpt-image-2.5-sunburst">gpt-image-2.5-sunburst</option>
-              </select>
-            </div>
             <div>
               <label>Default quality</label>
               <select id="batch-quality">
                 <option value="low">low (~$0.005)</option>
                 <option value="medium" selected>medium (~$0.041)</option>
                 <option value="high">high (~$0.190)</option>
-                <option value="xhigh">xhigh (2.5 models only)</option>
-                <option value="max">max (2.5 models only)</option>
+                <option value="xhigh">xhigh (2.5 only)</option>
+                <option value="max">max (2.5 only)</option>
               </select>
             </div>
             <div>
@@ -1384,18 +1386,19 @@
           <option value="low">low</option>
           <option value="medium" selected>medium</option>
           <option value="high">high</option>
-          <option value="xhigh">xhigh (2.5 models only)</option>
-          <option value="max">max (2.5 models only)</option>
+          <option value="xhigh">xhigh (2.5 only)</option>
+          <option value="max">max (2.5 only)</option>
         </select>
       </div>
-      <div>
-        <label>Model</label>
-        <select id="derive-model">
-          <option value="gpt-image-2">gpt-image-2</option>
-          <option value="gpt-image-2.5-flare">gpt-image-2.5-flare</option>
-          <option value="gpt-image-2.5-sunburst">gpt-image-2.5-sunburst</option>
-        </select>
-      </div>
+    </div>
+
+    <div style="margin-top:10px">
+      <label>Model</label>
+      <select id="derive-model">
+        <option value="gpt-image-2">gpt-image-2</option>
+        <option value="gpt-image-2.5-flare">gpt-image-2.5-flare</option>
+        <option value="gpt-image-2.5-sunburst">gpt-image-2.5-sunburst</option>
+      </select>
     </div>
 
     <div class="row" style="margin-top:14px">
