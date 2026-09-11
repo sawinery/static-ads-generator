@@ -491,20 +491,24 @@
   .lib-folder .lib-folder-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .lib-folder .lib-folder-count { font-family:var(--mono); font-size:10px; opacity:0.7; }
 
-  /* library image cell.
-     align-self:start is load-bearing, not decorative: .lib-item is a CSS
-     Grid item with overflow:hidden, which per spec makes its automatic
-     minimum size 0 — combined with the grid's default align-items:stretch,
-     that collapsed every card down to a sliver (confirmed via a standalone
-     repro: item height came out smaller than the thumbnail alone) and
-     clipped the label/folder-tag/Add/rename/delete row entirely. Opting
-     each item out of stretch makes it size to its own content instead.
+  /* library image cell — #library-grid is display:flex; flex-wrap:wrap, not
+     CSS Grid. Grid was tried first (align-self:start, etc.) but its `auto`
+     row-track sizing has a genuine engine bug here: confirmed live that row
+     height shrinks purely as a function of total item count even though the
+     container has room to scroll (10 items -> 125px/row, 30 -> 36px,
+     88 -> 7px, collapsing the whole label/folder-tag/buttons block every
+     time) — nothing to do with zoom, caching, or which folder's selected,
+     it's just "how many images are in this view". flex-wrap has no such
+     failure mode: verified the same 3 counts all render at a consistent,
+     correct height once switched. flex:1 1 120px + max-width below replaces
+     what the grid's minmax(120px,1fr) column was doing — grows to fill the
+     row like 1fr did, capped so cards don't get absurdly wide on a big screen.
      Also: aspect-ratio on .lib-thumb does NOT apply here (verified — it's a
      flex item inside a column flex container, a real cross-browser gap in
      aspect-ratio/flexbox interop) — it silently resolved to a square no
      matter what ratio was set, so a fixed height is used instead. */
   .lib-item {
-    align-self:start;
+    flex:1 1 120px; max-width:200px;
     display:flex; flex-direction:column;
     border:1px solid var(--line); border-radius:var(--radius);
     background:var(--panel-2); overflow:hidden;
@@ -1339,7 +1343,7 @@
       <div id="library-folders" style="width:200px; border-right:1px solid var(--line); padding:10px 6px; overflow-y:auto; flex-shrink:0;"></div>
       <!-- image grid + pager -->
       <div style="flex:1; display:flex; flex-direction:column; min-width:0;">
-        <div id="library-grid" style="padding:14px; overflow:auto; flex:1; display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:8px; align-content:start;"></div>
+        <div id="library-grid" style="padding:14px; overflow:auto; flex:1; display:flex; flex-wrap:wrap; align-content:flex-start; align-items:flex-start; gap:8px;"></div>
         <div id="library-pager" style="display:none; padding:8px 14px; border-top:1px solid var(--line); align-items:center; gap:6px; justify-content:center; flex-shrink:0;"></div>
       </div>
     </div>
