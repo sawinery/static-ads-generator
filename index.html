@@ -4551,6 +4551,26 @@ $('va-submit').onclick = async () => {
   if (!headline) { $('va-err').textContent = 'Headline required.'; return; }
   if (!linkUrl)  { $('va-err').textContent = 'Destination URL required.'; return; }
 
+  // Duplicate-ad guard: warn if a job with the same name is already
+  // live/in-flight on this ad set, so you don't accidentally publish two
+  // copies of "V2" etc. `failed` jobs don't count — resubmitting after a
+  // failure is normal.
+  {
+    const { data: dupes, error: dupeErr } = await sb
+      .from('video_ad_jobs')
+      .select('id, status')
+      .eq('display_name', name)
+      .eq('ad_set_id', adSetId)
+      .neq('status', 'failed')
+      .limit(1);
+    if (!dupeErr && dupes && dupes.length) {
+      const proceed = confirm(
+        `An ad named "${name}" already exists on this ad set (status: ${dupes[0].status}).\n\nSubmit anyway and create a duplicate?`
+      );
+      if (!proceed) { $('va-info').textContent = 'Submission cancelled.'; return; }
+    }
+  }
+
   const btn = $('va-submit');
   btn.disabled = true;
   btn.textContent = 'Submitting…';
@@ -6549,6 +6569,24 @@ async function _vaSheetSubmitRowInner(row) {
   if (primaries.length === 0) { alert('Row needs at least one primary text'); return; }
   if (!d.link_url)  { alert('Row needs a destination URL'); return; }
   if (!d.pick_9_16 && !d.pick_1_1) { alert('Row needs at least one creative (9:16 or 1:1)'); return; }
+
+  // Duplicate-ad guard — same check as the single-ad form. `failed` jobs
+  // don't count so resubmitting after a failure isn't blocked.
+  {
+    const { data: dupes, error: dupeErr } = await sb
+      .from('video_ad_jobs')
+      .select('id, status')
+      .eq('display_name', d.name)
+      .eq('ad_set_id', d.ad_set_id)
+      .neq('status', 'failed')
+      .limit(1);
+    if (!dupeErr && dupes && dupes.length) {
+      const proceed = confirm(
+        `An ad named "${d.name}" already exists on this ad set (status: ${dupes[0].status}).\n\nSubmit anyway and create a duplicate?`
+      );
+      if (!proceed) return;
+    }
+  }
 
   d.status = 'submitting';
   d.error = '';
